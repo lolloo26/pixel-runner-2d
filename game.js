@@ -8,170 +8,292 @@ chestCanvas.width = 64;
 chestCanvas.height = 64;
 chestCtx.imageSmoothingEnabled = false;
 
-var SCALE = 4;
-var W = 200;
-var H = 112;
+var W = 320;
+var H = 180;
 canvas.width = W;
 canvas.height = H;
 ctx.imageSmoothingEnabled = false;
 
-var GROUND_Y = H - 16;
-var GRAVITY = 0.35;
-var MAX_FALL = 6;
-var JUMP_FORCE = -4.8;
-var JUMP_HOLD = -0.18;
-var JUMP_HOLD_MAX = 12;
+var GROUND_Y = H - 22;
+var GRAVITY = 0.38;
+var MAX_FALL = 7;
+var JUMP_FORCE = -5.6;
+var JUMP_HOLD = -0.19;
+var JUMP_HOLD_MAX = 14;
+
+var MAX_JUMP_HEIGHT = 42;
+
+function scaleCanvas() {
+    var cw = window.innerWidth;
+    var ch = window.innerHeight;
+    var scaleX = cw / W;
+    var scaleY = ch / H;
+    var scale = Math.min(scaleX, scaleY);
+    var pw = Math.round(W * scale);
+    var ph = Math.round(H * scale);
+    var ox = Math.floor((cw - pw) / 2);
+    var oy = Math.floor((ch - ph) / 2);
+    canvas.style.width  = pw + 'px';
+    canvas.style.height = ph + 'px';
+    canvas.style.left   = ox + 'px';
+    canvas.style.top    = oy + 'px';
+}
+
+scaleCanvas();
+window.addEventListener('resize', scaleCanvas);
 
 var BIOMES = [
     {
         name: 'GIUNGLA',
-        sky: [6, 34, 6],
-        ground: [10, 80, 10],
-        groundAlt: [15, 100, 20],
-        far: [8, 50, 8],
-        mid: [15, 70, 15],
-        accent: [74, 222, 128],
-        obstacleColor: [30, 120, 30],
-        flyColor: [20, 160, 60],
-        wallColor: [50, 180, 50],
+        sky: [4, 28, 8],
+        ground: [14, 90, 18],
+        groundAlt: [22, 115, 28],
+        groundDark: [8, 55, 12],
+        far: [6, 44, 10],
+        mid: [12, 66, 16],
+        accent: [60, 220, 100],
+        obstacleColor: [28, 108, 28],
+        obstacleDark: [14, 60, 14],
+        obstacleHighlight: [60, 160, 60],
+        flyColor: [20, 155, 55],
+        flyDark: [10, 90, 30],
+        flyHighlight: [50, 200, 90],
+        wallColor: [45, 165, 45],
+        wallDark: [20, 90, 20],
         coinColor: [255, 215, 0],
-        particles: [40, 200, 40]
+        coinHighlight: [255, 240, 100],
+        coinShadow: [180, 130, 0],
+        particles: [50, 210, 60],
+        atmColor: [40, 200, 40],
+        atmType: 'leaves'
     },
     {
         name: 'VULCANO',
-        sky: [34, 6, 6],
-        ground: [80, 20, 10],
-        groundAlt: [100, 30, 15],
-        far: [50, 10, 8],
-        mid: [70, 20, 15],
-        accent: [248, 113, 113],
-        obstacleColor: [120, 30, 20],
-        flyColor: [200, 60, 20],
-        wallColor: [220, 80, 30],
+        sky: [32, 5, 5],
+        ground: [90, 22, 10],
+        groundAlt: [115, 35, 18],
+        groundDark: [55, 10, 5],
+        far: [52, 10, 6],
+        mid: [75, 22, 14],
+        accent: [255, 90, 30],
+        obstacleColor: [130, 32, 18],
+        obstacleDark: [70, 14, 8],
+        obstacleHighlight: [200, 70, 40],
+        flyColor: [210, 55, 18],
+        flyDark: [120, 25, 8],
+        flyHighlight: [255, 110, 60],
+        wallColor: [230, 75, 28],
+        wallDark: [120, 35, 12],
         coinColor: [255, 180, 0],
-        particles: [255, 100, 20]
+        coinHighlight: [255, 230, 80],
+        coinShadow: [180, 100, 0],
+        particles: [255, 110, 20],
+        atmColor: [255, 80, 10],
+        atmType: 'sparks'
     },
     {
         name: 'GHIACCIAIO',
-        sky: [6, 26, 40],
-        ground: [20, 80, 100],
-        groundAlt: [30, 100, 120],
-        far: [10, 40, 60],
-        mid: [20, 60, 80],
-        accent: [34, 211, 238],
-        obstacleColor: [40, 120, 160],
-        flyColor: [60, 160, 200],
-        wallColor: [80, 200, 240],
+        sky: [5, 20, 38],
+        ground: [22, 88, 110],
+        groundAlt: [34, 110, 135],
+        groundDark: [10, 45, 65],
+        far: [8, 38, 58],
+        mid: [18, 60, 82],
+        accent: [30, 210, 240],
+        obstacleColor: [38, 118, 158],
+        obstacleDark: [18, 65, 90],
+        obstacleHighlight: [80, 190, 230],
+        flyColor: [55, 158, 200],
+        flyDark: [22, 80, 110],
+        flyHighlight: [110, 220, 255],
+        wallColor: [78, 198, 238],
+        wallDark: [30, 110, 150],
         coinColor: [200, 240, 255],
-        particles: [100, 220, 255]
+        coinHighlight: [240, 255, 255],
+        coinShadow: [100, 170, 210],
+        particles: [110, 225, 255],
+        atmColor: [180, 230, 255],
+        atmType: 'snow'
     },
     {
         name: 'DESERTO NEON',
-        sky: [26, 6, 34],
-        ground: [80, 30, 100],
-        groundAlt: [100, 40, 120],
-        far: [40, 10, 50],
-        mid: [60, 20, 70],
-        accent: [232, 121, 249],
-        obstacleColor: [120, 50, 140],
-        flyColor: [180, 80, 200],
-        wallColor: [200, 100, 255],
+        sky: [24, 5, 32],
+        ground: [82, 28, 105],
+        groundAlt: [105, 40, 130],
+        groundDark: [44, 12, 58],
+        far: [38, 8, 50],
+        mid: [62, 18, 72],
+        accent: [235, 115, 255],
+        obstacleColor: [122, 48, 145],
+        obstacleDark: [65, 22, 80],
+        obstacleHighlight: [185, 90, 220],
+        flyColor: [182, 78, 205],
+        flyDark: [95, 35, 115],
+        flyHighlight: [230, 130, 255],
+        wallColor: [205, 98, 258],
+        wallDark: [110, 42, 140],
         coinColor: [255, 215, 0],
-        particles: [220, 120, 255]
+        coinHighlight: [255, 245, 120],
+        coinShadow: [180, 130, 0],
+        particles: [225, 118, 255],
+        atmColor: [200, 80, 255],
+        atmType: 'neon'
     }
 ];
 
 var SKINS = [
-    { id: 'classic', name: 'CLASSICO', rarity: 'common', colors: { body: '#ffffff', eye: '#00ff88', outline: '#888888' } },
-    { id: 'ninja', name: 'NINJA', rarity: 'common', colors: { body: '#2a2a3a', eye: '#ff0044', outline: '#111122' } },
-    { id: 'robot', name: 'ROBOT', rarity: 'rare', colors: { body: '#aabbcc', eye: '#00ffff', outline: '#667788' } },
-    { id: 'magma', name: 'MAGMA', rarity: 'rare', colors: { body: '#ff4422', eye: '#ffff00', outline: '#aa2200' } },
-    { id: 'ice', name: 'GHIACCIO', rarity: 'epic', colors: { body: '#88ddff', eye: '#ffffff', outline: '#4488aa' } },
-    { id: 'gold', name: 'DORATO', rarity: 'legendary', colors: { body: '#ffd700', eye: '#ff4400', outline: '#aa8800' } }
+    { id: 'classic', name: 'CLASSICO',  rarity: 'common',    colors: { body: '#e8e8ff', eye: '#00ff88', outline: '#555566' } },
+    { id: 'ninja',   name: 'NINJA',     rarity: 'common',    colors: { body: '#1e1e2e', eye: '#ff0044', outline: '#080810' } },
+    { id: 'robot',   name: 'ROBOT',     rarity: 'rare',      colors: { body: '#aabbcc', eye: '#00ffff', outline: '#445566' } },
+    { id: 'magma',   name: 'MAGMA',     rarity: 'rare',      colors: { body: '#ff4422', eye: '#ffff00', outline: '#8a1800' } },
+    { id: 'ice',     name: 'GHIACCIO',  rarity: 'epic',      colors: { body: '#88ddff', eye: '#ffffff', outline: '#3377aa' } },
+    { id: 'gold',    name: 'DORATO',    rarity: 'legendary', colors: { body: '#ffd700', eye: '#ff4400', outline: '#886600' } }
 ];
 
 var RARITY_WEIGHTS = { common: 40, rare: 25, epic: 15, legendary: 5 };
-var RARITY_LABELS = { common: 'COMUNE', rare: 'RARO', epic: 'EPICO', legendary: 'LEGGENDARIO' };
-var RARITY_COLORS = { common: '#aaaaaa', rare: '#55aaff', epic: '#cc55ff', legendary: '#ffd700' };
-var DUPE_REFUND = { common: 10, rare: 20, epic: 35, legendary: 50 };
+var RARITY_LABELS  = { common: 'COMUNE', rare: 'RARO', epic: 'EPICO', legendary: 'LEGGENDARIO' };
+var RARITY_COLORS  = { common: '#aaaaaa', rare: '#55aaff', epic: '#cc55ff', legendary: '#ffd700' };
+var DUPE_REFUND    = { common: 10, rare: 20, epic: 35, legendary: 50 };
 
-var PLAYER_SPRITE = [
-    [0,0,0,1,1,1,0,0,0],
-    [0,0,1,1,1,1,1,0,0],
-    [0,0,1,2,1,2,1,0,0],
-    [0,0,1,1,1,1,1,0,0],
-    [0,1,1,1,1,1,1,1,0],
-    [0,1,0,1,1,1,0,1,0],
-    [0,0,0,1,1,1,0,0,0],
-    [0,0,0,1,0,1,0,0,0],
-    [0,0,1,1,0,1,1,0,0]
+var PLAYER_IDLE = [
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,1,1,0,0],
+    [0,0,2,1,1,1,1,2,0,0],
+    [0,0,2,1,1,1,1,2,0,0],
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,1,1,1,1,1,1,1,1,0],
+    [0,1,0,1,1,1,1,0,1,0],
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,0,0,1,0,0,1,0,0,0],
+    [0,0,1,1,0,0,1,1,0,0]
+];
+
+var PLAYER_RUN1 = [
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,1,1,0,0],
+    [0,0,2,1,1,1,1,2,0,0],
+    [0,0,2,1,1,1,1,2,0,0],
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,1,1,1,1,1,1,1,1,0],
+    [0,1,0,1,1,1,1,0,1,0],
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,0,1,1,0,0,0,1,0,0],
+    [0,1,1,0,0,0,0,1,1,0]
+];
+
+var PLAYER_RUN2 = [
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,1,1,0,0],
+    [0,0,2,1,1,1,1,2,0,0],
+    [0,0,2,1,1,1,1,2,0,0],
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,1,1,1,1,1,1,1,1,0],
+    [0,1,0,1,1,1,1,0,1,0],
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,0,0,1,0,0,1,1,0,0],
+    [0,0,0,1,1,0,1,1,0,0]
+];
+
+var PLAYER_JUMP = [
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,1,1,0,0],
+    [0,0,2,1,1,1,1,2,0,0],
+    [0,0,2,1,1,1,1,2,0,0],
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,1,1,1,1,1,1,1,1,0],
+    [1,0,0,1,1,1,1,0,0,1],
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,0,1,0,0,0,0,1,0,0],
+    [0,1,0,0,0,0,0,0,1,0]
 ];
 
 var PLAYER_CROUCH = [
-    [0,0,1,1,1,1,1,0,0],
-    [0,0,1,2,1,2,1,0,0],
-    [0,1,1,1,1,1,1,1,0],
-    [0,1,0,1,1,1,0,1,0],
-    [0,0,1,1,0,1,1,0,0]
+    [0,0,1,1,1,1,1,1,0,0],
+    [0,0,2,1,1,1,1,2,0,0],
+    [0,0,2,1,1,1,1,2,0,0],
+    [0,1,1,1,1,1,1,1,1,0],
+    [0,1,0,1,1,1,1,0,1,0],
+    [0,0,1,1,0,0,1,1,0,0]
 ];
 
 var COIN_SPRITE = [
-    [0,1,1,1,0],
-    [1,1,0,1,1],
-    [1,0,1,0,1],
-    [1,1,0,1,1],
-    [0,1,1,1,0]
+    [0,0,1,1,1,1,0,0],
+    [0,1,2,2,2,1,1,0],
+    [1,1,2,1,1,2,1,1],
+    [1,2,1,3,3,1,2,1],
+    [1,2,1,3,3,1,2,1],
+    [1,1,2,1,1,2,1,1],
+    [0,1,1,2,2,1,1,0],
+    [0,0,1,1,1,1,0,0]
 ];
 
-var COIN_ANIM = [
-    [0,1,1,1,0],
-    [0,1,0,1,0],
-    [0,1,1,1,0],
-    [0,1,0,1,0],
-    [0,1,1,1,0]
+var COIN_ANIM1 = [
+    [0,0,0,1,1,0,0,0],
+    [0,0,1,2,2,1,0,0],
+    [0,0,1,2,2,1,0,0],
+    [0,0,1,2,2,1,0,0],
+    [0,0,1,2,2,1,0,0],
+    [0,0,1,2,2,1,0,0],
+    [0,0,1,2,2,1,0,0],
+    [0,0,0,1,1,0,0,0]
 ];
+
+var COIN_ANIM2 = [
+    [0,0,0,0,1,0,0,0],
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,0,1,0,0,0]
+];
+
+var COIN_ANIM3 = COIN_ANIM1;
+
+var COIN_FRAMES = [COIN_SPRITE, COIN_ANIM1, COIN_ANIM2, COIN_ANIM3];
 
 var ui = {
-    main: document.getElementById('main-menu'),
-    game: document.getElementById('game-ui'),
-    over: document.getElementById('game-over'),
-    shop: document.getElementById('shop-menu'),
+    main:         document.getElementById('main-menu'),
+    game:         document.getElementById('game-ui'),
+    over:         document.getElementById('game-over'),
+    shop:         document.getElementById('shop-menu'),
     chestOverlay: document.getElementById('chest-overlay'),
-    score: document.getElementById('current-score'),
-    coinCount: document.getElementById('coin-count'),
-    biome: document.getElementById('biome-indicator'),
-    prompt: document.getElementById('timing-prompt'),
-    highScore: document.getElementById('main-highscore'),
-    mainCoins: document.getElementById('main-coins'),
-    shopCoins: document.getElementById('shop-coins'),
-    skinList: document.getElementById('skin-selector'),
-    finalScore: document.getElementById('final-score'),
-    finalCoins: document.getElementById('final-coins'),
-    newRecord: document.getElementById('new-record'),
-    chestResult: document.getElementById('chest-result'),
-    chestClose: document.getElementById('chest-close-btn')
+    score:        document.getElementById('current-score'),
+    coinCount:    document.getElementById('coin-count'),
+    biome:        document.getElementById('biome-indicator'),
+    prompt:       document.getElementById('timing-prompt'),
+    highScore:    document.getElementById('main-highscore'),
+    mainCoins:    document.getElementById('main-coins'),
+    shopCoins:    document.getElementById('shop-coins'),
+    skinList:     document.getElementById('skin-selector'),
+    finalScore:   document.getElementById('final-score'),
+    finalCoins:   document.getElementById('final-coins'),
+    newRecord:    document.getElementById('new-record'),
+    chestResult:  document.getElementById('chest-result'),
+    chestClose:   document.getElementById('chest-close-btn')
 };
 
 var save = {
-    coins: parseInt(localStorage.getItem('pr_coins')) || 0,
-    highScore: parseInt(localStorage.getItem('pr_highscore')) || 0,
-    skins: JSON.parse(localStorage.getItem('pr_skins')) || ['classic'],
-    activeSkin: localStorage.getItem('pr_active_skin') || 'classic'
+    coins:      parseInt(localStorage.getItem('pr_coins'))    || 0,
+    highScore:  parseInt(localStorage.getItem('pr_highscore'))|| 0,
+    skins:      JSON.parse(localStorage.getItem('pr_skins'))  || ['classic'],
+    activeSkin: localStorage.getItem('pr_active_skin')        || 'classic'
 };
 
 function persist() {
-    localStorage.setItem('pr_coins', save.coins);
-    localStorage.setItem('pr_highscore', save.highScore);
-    localStorage.setItem('pr_skins', JSON.stringify(save.skins));
-    localStorage.setItem('pr_active_skin', save.activeSkin);
+    localStorage.setItem('pr_coins',      save.coins);
+    localStorage.setItem('pr_highscore',  save.highScore);
+    localStorage.setItem('pr_skins',      JSON.stringify(save.skins));
+    localStorage.setItem('pr_active_skin',save.activeSkin);
 }
 
 var game = {
     running: false,
     score: 0,
     sessionCoins: 0,
-    speed: 1.5,
-    baseSpeed: 1.5,
+    speed: 1.6,
+    baseSpeed: 1.6,
     biomeIndex: 0,
     biomeTransition: 0,
     prevBiomeIndex: -1,
@@ -184,11 +306,14 @@ var game = {
     flashAlpha: 0
 };
 
+var PW = 10;
+var PH = 10;
+
 var player = {
-    x: 30,
-    y: GROUND_Y - 9,
-    w: 9,
-    h: 9,
+    x: 36,
+    y: GROUND_Y - PH,
+    w: PW,
+    h: PH,
     vy: 0,
     grounded: true,
     crouching: false,
@@ -203,6 +328,7 @@ var obstacles = [];
 var coins = [];
 var walls = [];
 var particles = [];
+var atmParticles = [];
 var bgLayers = { far: [], mid: [], stars: [] };
 
 function rgb(arr) {
@@ -251,15 +377,54 @@ function initBgElements() {
     bgLayers.far = [];
     bgLayers.mid = [];
     bgLayers.stars = [];
-    for (var i = 0; i < 20; i++) {
-        bgLayers.stars.push({ x: rand(0, W), y: rand(0, GROUND_Y - 20), twinkle: rand(0, 6.28) });
-    }
-    for (var i = 0; i < 6; i++) {
-        bgLayers.far.push({ x: i * 45, h: rand(20, 50), w: rand(30, 50) });
+    atmParticles = [];
+    for (var i = 0; i < 28; i++) {
+        bgLayers.stars.push({ x: rand(0, W), y: rand(0, GROUND_Y - 25), twinkle: rand(0, 6.28) });
     }
     for (var i = 0; i < 8; i++) {
-        bgLayers.mid.push({ x: i * 30, h: rand(10, 30), w: rand(15, 25), type: randInt(0, 2) });
+        bgLayers.far.push({ x: i * 55, h: rand(28, 60), w: rand(38, 60) });
     }
+    for (var i = 0; i < 10; i++) {
+        bgLayers.mid.push({ x: i * 36, h: rand(12, 36), w: rand(16, 28), type: randInt(0, 2) });
+    }
+    for (var i = 0; i < 20; i++) {
+        atmParticles.push(makeAtmParticle(true));
+    }
+}
+
+function makeAtmParticle(randomX) {
+    var b = biome();
+    var p = {
+        x: randomX ? rand(0, W) : W + rand(0, 20),
+        y: rand(0, GROUND_Y - 10),
+        vx: 0,
+        vy: 0,
+        size: rand(1, 2.5),
+        life: rand(0, 180),
+        maxLife: rand(80, 200),
+        type: b.atmType
+    };
+    if (b.atmType === 'leaves') {
+        p.vx = rand(-1.0, -0.3);
+        p.vy = rand(0.2, 0.7);
+        p.angle = rand(0, 6.28);
+        p.spin  = rand(-0.08, 0.08);
+    } else if (b.atmType === 'sparks') {
+        p.vx = rand(-1.5, -0.3);
+        p.vy = rand(-1.2, 0.2);
+        p.grav = 0.04;
+    } else if (b.atmType === 'snow') {
+        p.vx = rand(-0.5, -0.1);
+        p.vy = rand(0.3, 0.8);
+        p.wobble = rand(0, 6.28);
+        p.wobbleSpeed = rand(0.04, 0.12);
+    } else if (b.atmType === 'neon') {
+        p.vx = rand(-1.2, -0.3);
+        p.vy = rand(-0.4, 0.4);
+        p.pulse = rand(0, 6.28);
+        p.pulseSpeed = rand(0.1, 0.25);
+    }
+    return p;
 }
 
 function drawSprite(sx, sy, matrix, colorMap) {
@@ -288,43 +453,128 @@ function drawSpriteOnCtx(context, sx, sy, matrix, colorMap, scale) {
 }
 
 function getSkinColors(skinDef) {
-    return { 1: skinDef.colors.body, 2: skinDef.colors.eye };
+    return { 1: skinDef.colors.body, 2: skinDef.colors.eye, 3: skinDef.colors.outline };
+}
+
+function drawOutlinedSprite(sx, sy, matrix, colorMap, outlineColor) {
+    var dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+    for (var r = 0; r < matrix.length; r++) {
+        for (var c = 0; c < matrix[r].length; c++) {
+            if (matrix[r][c] > 0) {
+                for (var d = 0; d < dirs.length; d++) {
+                    var nr = r + dirs[d][0];
+                    var nc = c + dirs[d][1];
+                    var outside = nr < 0 || nr >= matrix.length || nc < 0 || nc >= matrix[r].length || matrix[nr][nc] === 0;
+                    if (outside) {
+                        ctx.fillStyle = outlineColor;
+                        ctx.fillRect(Math.floor(sx + c + dirs[d][1]), Math.floor(sy + r + dirs[d][0]), 1, 1);
+                    }
+                }
+            }
+        }
+    }
+    for (var r = 0; r < matrix.length; r++) {
+        for (var c = 0; c < matrix[r].length; c++) {
+            var v = matrix[r][c];
+            if (v > 0 && colorMap[v]) {
+                ctx.fillStyle = colorMap[v];
+                ctx.fillRect(Math.floor(sx + c), Math.floor(sy + r), 1, 1);
+            }
+        }
+    }
 }
 
 function spawnObstacle() {
     var b = biome();
-    var flying = Math.random() < 0.3;
+    var flying = Math.random() < 0.28;
     if (flying) {
+        var fw = randInt(5, 9);
+        var fh = 4;
+        var fy = GROUND_Y - randInt(16, 28);
         obstacles.push({
-            x: W + 5,
-            y: GROUND_Y - randInt(14, 24),
-            w: randInt(4, 7),
-            h: 3,
+            x: W + 8,
+            y: fy,
+            w: fw,
+            h: fh,
             flying: true,
-            color: b.flyColor
+            color: b.flyColor,
+            dark: b.flyDark,
+            highlight: b.flyHighlight,
+            wingTimer: 0
         });
     } else {
         var tall = Math.random() < 0.3;
+        var oh = tall ? randInt(10, 16) : randInt(5, 9);
+        var ow = randInt(4, 7);
         obstacles.push({
-            x: W + 5,
-            y: GROUND_Y - (tall ? randInt(8, 12) : randInt(4, 7)),
-            w: randInt(3, 5),
-            h: tall ? randInt(8, 12) : randInt(4, 7),
+            x: W + 8,
+            y: GROUND_Y - oh,
+            w: ow,
+            h: oh,
             flying: false,
-            color: b.obstacleColor
+            color: b.obstacleColor,
+            dark: b.obstacleDark,
+            highlight: b.obstacleHighlight
         });
     }
 }
 
-function spawnCoin() {
-    coins.push({
-        x: W + 5,
-        y: GROUND_Y - randInt(10, 30),
-        w: 5,
-        h: 5,
-        frame: 0,
-        timer: 0
-    });
+function obstaclesOverlapAt(nx, ny, nw, nh) {
+    for (var i = 0; i < obstacles.length; i++) {
+        var o = obstacles[i];
+        if (nx < o.x + o.w + 4 && nx + nw + 4 > o.x &&
+            ny < o.y + o.h     && ny + nh     > o.y) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function spawnCoinRow() {
+    var b = biome();
+    var count = randInt(3, 6);
+    var startX = W + 8;
+    var groundRow = Math.random() < 0.5;
+    var rowY;
+
+    if (groundRow) {
+        rowY = GROUND_Y - 8 - 2;
+    } else {
+        var arcH = randInt(14, Math.floor(MAX_JUMP_HEIGHT * 0.75));
+        rowY = GROUND_Y - PH - arcH;
+        if (rowY < 8) rowY = 8;
+    }
+
+    var step = 10;
+    var allClear = true;
+    for (var i = 0; i < count; i++) {
+        var cx = startX + i * step;
+        var cy = rowY;
+        if (obstaclesOverlapAt(cx, cy, 8, 8)) {
+            allClear = false;
+            break;
+        }
+        for (var j = 0; j < walls.length; j++) {
+            if (!walls[j].destroyed && cx < walls[j].x + walls[j].w + 6 && cx + 8 > walls[j].x - 6) {
+                allClear = false;
+                break;
+            }
+        }
+        if (!allClear) break;
+    }
+
+    if (!allClear) return;
+
+    for (var i = 0; i < count; i++) {
+        coins.push({
+            x: startX + i * step,
+            y: rowY,
+            w: 8,
+            h: 8,
+            frame: 0,
+            timer: 0
+        });
+    }
 }
 
 function spawnWall() {
@@ -333,12 +583,13 @@ function spawnWall() {
     var b = biome();
     walls.push({
         x: W + 10,
-        w: 6,
+        w: 8,
         h: GROUND_Y,
         color: b.wallColor,
+        dark: b.wallDark,
         active: true,
         windowStart: -1,
-        windowDuration: 40,
+        windowDuration: 44,
         destroyed: false,
         missed: false,
         flashTimer: 0
@@ -348,26 +599,26 @@ function spawnWall() {
 function spawnParticles(x, y, color, count) {
     for (var i = 0; i < count; i++) {
         particles.push({
-            x: x + rand(-3, 3),
-            y: y + rand(-3, 3),
-            vx: rand(-2, 2),
-            vy: rand(-3, 0),
-            life: rand(15, 40),
-            maxLife: 40,
-            size: rand(1, 2.5),
+            x: x + rand(-4, 4),
+            y: y + rand(-4, 4),
+            vx: rand(-2.5, 2.5),
+            vy: rand(-3.5, 0),
+            life: rand(18, 50),
+            maxLife: 50,
+            size: rand(1, 3),
             color: color
         });
     }
 }
 
 function spawnCoinParticles(x, y) {
-    for (var i = 0; i < 6; i++) {
+    for (var i = 0; i < 8; i++) {
         particles.push({
             x: x, y: y,
-            vx: rand(-1.5, 1.5),
-            vy: rand(-2, -0.5),
-            life: rand(10, 20),
-            maxLife: 20,
+            vx: rand(-2, 2),
+            vy: rand(-2.5, -0.5),
+            life: rand(10, 24),
+            maxLife: 24,
             size: 1,
             color: [255, 215, 0]
         });
@@ -379,8 +630,8 @@ function aabb(ax, ay, aw, ah, bx, by, bw, bh) {
 }
 
 function resetPlayer() {
-    player.x = 30;
-    player.y = GROUND_Y - 9;
+    player.x = 36;
+    player.y = GROUND_Y - PH;
     player.vy = 0;
     player.grounded = true;
     player.crouching = false;
@@ -392,8 +643,8 @@ function startGame() {
     game.running = true;
     game.score = 0;
     game.sessionCoins = 0;
-    game.speed = 1.5;
-    game.baseSpeed = 1.5;
+    game.speed = 1.6;
+    game.baseSpeed = 1.6;
     game.biomeIndex = 0;
     game.prevBiomeIndex = -1;
     game.biomeTransition = 1;
@@ -470,15 +721,15 @@ function refreshShop() {
     ui.skinList.innerHTML = '';
 
     for (var i = 0; i < SKINS.length; i++) {
-        var skin = SKINS[i];
-        var owned = save.skins.indexOf(skin.id) >= 0;
+        var skin   = SKINS[i];
+        var owned  = save.skins.indexOf(skin.id) >= 0;
         var equipped = save.activeSkin === skin.id;
 
         var item = document.createElement('div');
         item.className = 'skin-item';
-        if (equipped) item.className += ' equipped';
-        else if (owned) item.className += ' unlocked';
-        else item.className += ' locked';
+        if (equipped)    item.className += ' equipped';
+        else if (owned)  item.className += ' unlocked';
+        else             item.className += ' locked';
 
         var raritySpan = document.createElement('span');
         raritySpan.className = 'skin-rarity rarity-' + skin.rarity;
@@ -486,13 +737,13 @@ function refreshShop() {
         item.appendChild(raritySpan);
 
         var preview = document.createElement('canvas');
-        preview.width = 9;
-        preview.height = 9;
-        preview.style.width = '36px';
+        preview.width  = 10;
+        preview.height = 10;
+        preview.style.width  = '36px';
         preview.style.height = '36px';
         var pCtx = preview.getContext('2d');
         pCtx.imageSmoothingEnabled = false;
-        drawSpriteOnCtx(pCtx, 0, 0, PLAYER_SPRITE, getSkinColors(skin), 1);
+        drawSpriteOnCtx(pCtx, 0, 0, PLAYER_IDLE, getSkinColors(skin), 1);
         item.appendChild(preview);
 
         var nameSpan = document.createElement('span');
@@ -553,50 +804,47 @@ function openChest() {
             chestCtx.save();
             chestCtx.translate(32 + shk, 32);
             chestCtx.fillStyle = '#d4a017';
-            chestCtx.fillRect(-12, -8, 24, 16);
+            chestCtx.fillRect(-13, -9, 26, 18);
             chestCtx.fillStyle = '#aa7700';
-            chestCtx.fillRect(-12, -8, 24, 4);
+            chestCtx.fillRect(-13, -9, 26, 5);
             chestCtx.fillStyle = '#ffd700';
-            chestCtx.fillRect(-2, -2, 4, 4);
+            chestCtx.fillRect(-3, -3, 6, 6);
+            chestCtx.fillStyle = '#886600';
+            chestCtx.fillRect(-13, 0, 26, 1);
             chestCtx.restore();
             requestAnimationFrame(animateChest);
         } else if (chestAnim.timer < 90) {
             var t = (chestAnim.timer - 60) / 30;
             chestCtx.save();
             chestCtx.translate(32, 32);
-
             chestCtx.fillStyle = '#d4a017';
-            chestCtx.fillRect(-12, -8 + t * 4, 24, 16 - t * 4);
+            chestCtx.fillRect(-13, -9 + t * 5, 26, 18 - t * 5);
             chestCtx.fillStyle = '#aa7700';
-            chestCtx.fillRect(-12, -8 - t * 8, 24, 4);
-
+            chestCtx.fillRect(-13, -9 - t * 9, 26, 5);
             var glow = Math.sin(chestAnim.timer * 0.3) * 0.3 + 0.7;
             chestCtx.fillStyle = 'rgba(255,215,0,' + glow + ')';
-            chestCtx.fillRect(-8, -6, 16, 4);
-
+            chestCtx.fillRect(-9, -7, 18, 5);
             chestCtx.restore();
             requestAnimationFrame(animateChest);
         } else if (chestAnim.timer < 120) {
             chestCtx.save();
             chestCtx.translate(32, 20);
             var colors = getSkinColors(chestAnim.skin);
-            drawSpriteOnCtx(chestCtx, -9, -9, PLAYER_SPRITE, colors, 2);
+            drawSpriteOnCtx(chestCtx, -10, -10, PLAYER_IDLE, colors, 2);
             chestCtx.restore();
-
             var sparkle = (chestAnim.timer - 90) / 30;
-            for (var i = 0; i < 8; i++) {
-                var angle = (i / 8) * Math.PI * 2 + chestAnim.timer * 0.1;
-                var dist = 10 + sparkle * 15;
+            for (var i = 0; i < 10; i++) {
+                var angle = (i / 10) * Math.PI * 2 + chestAnim.timer * 0.1;
+                var dist = 10 + sparkle * 18;
                 chestCtx.fillStyle = RARITY_COLORS[chestAnim.skin.rarity];
                 chestCtx.fillRect(32 + Math.cos(angle) * dist, 32 + Math.sin(angle) * dist, 2, 2);
             }
-
             requestAnimationFrame(animateChest);
         } else {
             chestCtx.save();
             chestCtx.translate(32, 20);
             var colors = getSkinColors(chestAnim.skin);
-            drawSpriteOnCtx(chestCtx, -9, -9, PLAYER_SPRITE, colors, 2);
+            drawSpriteOnCtx(chestCtx, -10, -10, PLAYER_IDLE, colors, 2);
             chestCtx.restore();
 
             if (!isDupe) {
@@ -617,7 +865,7 @@ function openChest() {
 }
 
 function updatePlayer() {
-    var ph = player.crouching ? 5 : 9;
+    var ph = player.crouching ? 6 : PH;
 
     if (keys['Space'] || keys['ArrowUp']) {
         if (player.grounded) {
@@ -636,7 +884,7 @@ function updatePlayer() {
     if (keys['ArrowDown']) {
         player.crouching = true;
         if (!player.grounded) {
-            player.vy += 0.5;
+            player.vy += 0.6;
         }
     } else {
         player.crouching = false;
@@ -656,16 +904,16 @@ function updatePlayer() {
     }
 
     player.animTimer++;
-    if (player.animTimer > 6) {
+    if (player.animTimer > 5) {
         player.animTimer = 0;
-        player.animFrame = (player.animFrame + 1) % 2;
+        player.animFrame = (player.animFrame + 1) % 4;
     }
 }
 
 function updateObstacles() {
     game.lastObstacle++;
-    var minGap = Math.max(40, 70 - game.speed * 5);
-    if (game.lastObstacle > minGap + rand(0, 30)) {
+    var minGap = Math.max(45, 80 - game.speed * 5);
+    if (game.lastObstacle > minGap + rand(0, 35)) {
         spawnObstacle();
         game.lastObstacle = 0;
     }
@@ -673,15 +921,16 @@ function updateObstacles() {
     for (var i = obstacles.length - 1; i >= 0; i--) {
         var o = obstacles[i];
         o.x -= game.speed;
+        if (o.flying) o.wingTimer++;
         if (o.x + o.w < 0) {
             obstacles.splice(i, 1);
             continue;
         }
 
-        var ph = player.crouching ? 5 : 9;
-        var py = player.crouching ? GROUND_Y - 5 : player.y;
-        if (aabb(player.x + 1, py + 1, player.w - 2, ph - 2, o.x, o.y, o.w, o.h)) {
-            game.screenShake = 8;
+        var ph = player.crouching ? 6 : PH;
+        var py = player.crouching ? GROUND_Y - 6 : player.y;
+        if (aabb(player.x + 2, py + 1, player.w - 4, ph - 2, o.x, o.y, o.w, o.h)) {
+            game.screenShake = 9;
             gameOver();
             return;
         }
@@ -690,8 +939,9 @@ function updateObstacles() {
 
 function updateCoins() {
     game.lastCoin++;
-    if (game.lastCoin > 50 + rand(0, 40)) {
-        spawnCoin();
+    var coinInterval = 55 + rand(0, 45);
+    if (game.lastCoin > coinInterval) {
+        spawnCoinRow();
         game.lastCoin = 0;
     }
 
@@ -699,18 +949,18 @@ function updateCoins() {
         var c = coins[i];
         c.x -= game.speed;
         c.timer++;
-        if (c.timer > 10) { c.timer = 0; c.frame = (c.frame + 1) % 2; }
+        if (c.timer > 8) { c.timer = 0; c.frame = (c.frame + 1) % COIN_FRAMES.length; }
 
         if (c.x + c.w < 0) {
             coins.splice(i, 1);
             continue;
         }
 
-        var ph = player.crouching ? 5 : 9;
-        var py = player.crouching ? GROUND_Y - 5 : player.y;
+        var ph = player.crouching ? 6 : PH;
+        var py = player.crouching ? GROUND_Y - 6 : player.y;
         if (aabb(player.x, py, player.w, ph, c.x, c.y, c.w, c.h)) {
             game.sessionCoins++;
-            spawnCoinParticles(c.x + 2, c.y + 2);
+            spawnCoinParticles(c.x + 4, c.y + 4);
             coins.splice(i, 1);
         }
     }
@@ -718,7 +968,7 @@ function updateCoins() {
 
 function updateWalls() {
     game.lastWall++;
-    var wallInterval = Math.max(200, 350 - game.speed * 10);
+    var wallInterval = Math.max(220, 380 - game.speed * 10);
     if (game.lastWall > wallInterval && !game.wallActive && Math.floor(game.score) > 30) {
         spawnWall();
         game.lastWall = 0;
@@ -730,7 +980,7 @@ function updateWalls() {
 
         if (wall.destroyed) {
             wall.flashTimer++;
-            if (wall.flashTimer > 20) {
+            if (wall.flashTimer > 22) {
                 walls.splice(i, 1);
                 game.wallActive = false;
             }
@@ -739,7 +989,7 @@ function updateWalls() {
 
         var dist = wall.x - player.x;
 
-        if (dist < 40 && dist > -5 && wall.windowStart < 0) {
+        if (dist < 50 && dist > -5 && wall.windowStart < 0) {
             wall.windowStart = 0;
             ui.prompt.classList.remove('hidden');
         }
@@ -753,21 +1003,21 @@ function updateWalls() {
 
         if (wall.missed) {
             ui.prompt.classList.add('hidden');
-            game.screenShake = 10;
+            game.screenShake = 11;
             gameOver();
             return;
         }
 
         if (wall.x + wall.w < player.x) {
             ui.prompt.classList.add('hidden');
-            game.screenShake = 10;
+            game.screenShake = 11;
             gameOver();
             return;
         }
 
-        var ph = player.crouching ? 5 : 9;
-        var py = player.crouching ? GROUND_Y - 5 : player.y;
-        if (!wall.destroyed && aabb(player.x + 1, py, player.w - 2, ph, wall.x, 0, wall.w, GROUND_Y)) {
+        var ph = player.crouching ? 6 : PH;
+        var py = player.crouching ? GROUND_Y - 6 : player.y;
+        if (!wall.destroyed && aabb(player.x + 2, py, player.w - 4, ph, wall.x, 0, wall.w, GROUND_Y)) {
             if (wall.windowStart >= 0 && wall.windowStart <= wall.windowDuration && keys['KeyE']) {
                 wall.destroyed = true;
                 wall.flashTimer = 0;
@@ -776,11 +1026,11 @@ function updateWalls() {
                 game.flashAlpha = 0.6;
                 game.screenShake = 5;
                 ui.prompt.classList.add('hidden');
-                spawnParticles(wall.x + wall.w / 2, GROUND_Y / 2, biome().particles, 30);
-                spawnParticles(wall.x + wall.w / 2, GROUND_Y / 3, biome().wallColor, 20);
+                spawnParticles(wall.x + wall.w / 2, GROUND_Y / 2, biome().particles, 32);
+                spawnParticles(wall.x + wall.w / 2, GROUND_Y / 3, biome().wallColor, 22);
             } else {
                 ui.prompt.classList.add('hidden');
-                game.screenShake = 10;
+                game.screenShake = 11;
                 gameOver();
                 return;
             }
@@ -801,6 +1051,32 @@ function updateParticles() {
     }
 }
 
+function updateAtmParticles() {
+    var b = biome();
+    for (var i = atmParticles.length - 1; i >= 0; i--) {
+        var p = atmParticles[i];
+        p.life++;
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.type === 'snow') {
+            p.wobble += p.wobbleSpeed;
+            p.x += Math.sin(p.wobble) * 0.3;
+        } else if (p.type === 'sparks') {
+            p.vy += p.grav;
+        } else if (p.type === 'neon') {
+            p.pulse += p.pulseSpeed;
+        } else if (p.type === 'leaves') {
+            p.angle += p.spin;
+        }
+
+        if (p.life > p.maxLife || p.x < -5 || p.y > GROUND_Y || p.y < -5) {
+            atmParticles[i] = makeAtmParticle(false);
+            atmParticles[i].type = b.atmType;
+        }
+    }
+}
+
 function updateBiome() {
     var scoreVal = Math.floor(game.score);
     var newBiome = Math.floor(scoreVal / 500) % BIOMES.length;
@@ -808,13 +1084,17 @@ function updateBiome() {
         game.prevBiomeIndex = game.biomeIndex;
         game.biomeIndex = newBiome;
         game.biomeTransition = 0;
-        game.baseSpeed += 0.15;
+        game.baseSpeed += 0.18;
         game.speed = game.baseSpeed;
         ui.biome.textContent = BIOMES[game.biomeIndex].name;
+        for (var i = 0; i < atmParticles.length; i++) {
+            atmParticles[i] = makeAtmParticle(true);
+            atmParticles[i].type = biome().atmType;
+        }
     }
 
     if (game.biomeTransition < 1) {
-        game.biomeTransition = Math.min(1, game.biomeTransition + 0.008);
+        game.biomeTransition = Math.min(1, game.biomeTransition + 0.007);
     }
 }
 
@@ -831,11 +1111,12 @@ function update() {
     updateWalls();
     if (!game.running) return;
     updateParticles();
+    updateAtmParticles();
 
     if (game.screenShake > 0) game.screenShake -= 0.5;
-    if (game.flashAlpha > 0) game.flashAlpha -= 0.03;
+    if (game.flashAlpha > 0)  game.flashAlpha  -= 0.03;
 
-    ui.score.textContent = Math.floor(game.score);
+    ui.score.textContent    = Math.floor(game.score);
     ui.coinCount.textContent = 'x' + game.sessionCoins;
 }
 
@@ -847,26 +1128,25 @@ function drawBackground() {
     for (var i = 0; i < bgLayers.stars.length; i++) {
         var s = bgLayers.stars[i];
         var twinkle = Math.sin(game.frameCount * 0.05 + s.twinkle) * 0.5 + 0.5;
-        ctx.fillStyle = rgba([255, 255, 255], twinkle * 0.6);
+        ctx.fillStyle = rgba([255, 255, 255], twinkle * 0.65);
         ctx.fillRect(Math.floor(s.x), Math.floor(s.y), 1, 1);
     }
 
     var farColor = transitionedColor('far');
-    ctx.fillStyle = rgb(farColor);
-    var farOffset = (game.frameCount * game.speed * 0.15) % W;
+    var farOffset = (game.frameCount * game.speed * 0.12) % W;
     for (var i = 0; i < bgLayers.far.length; i++) {
         var m = bgLayers.far[i];
-        var mx = ((m.x - farOffset) % (W + 60)) - 30;
-        if (mx < -60) mx += W + 60;
+        var mx = ((m.x - farOffset) % (W + 70)) - 35;
+        if (mx < -70) mx += W + 70;
         drawMountain(mx, GROUND_Y, m.w, m.h, farColor);
     }
 
     var midColor = transitionedColor('mid');
-    var midOffset = (game.frameCount * game.speed * 0.35) % W;
+    var midOffset = (game.frameCount * game.speed * 0.3) % W;
     for (var i = 0; i < bgLayers.mid.length; i++) {
         var t = bgLayers.mid[i];
-        var tx = ((t.x - midOffset) % (W + 40)) - 20;
-        if (tx < -30) tx += W + 40;
+        var tx = ((t.x - midOffset) % (W + 50)) - 25;
+        if (tx < -40) tx += W + 50;
         if (t.type === 0) {
             drawTree(tx, GROUND_Y, t.h, midColor);
         } else if (t.type === 1) {
@@ -885,123 +1165,238 @@ function drawMountain(x, baseY, w, h, color) {
     ctx.lineTo(x + w, baseY);
     ctx.closePath();
     ctx.fill();
+    var lighter = lerpColor(color, [255, 255, 255], 0.15);
+    ctx.fillStyle = rgb(lighter);
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.5, baseY - h);
+    ctx.lineTo(x + w * 0.5 + 3, baseY - h + 6);
+    ctx.lineTo(x + w * 0.5 - 3, baseY - h + 6);
+    ctx.closePath();
+    ctx.fill();
 }
 
 function drawTree(x, baseY, h, color) {
+    var dk = lerpColor(color, [0, 0, 0], 0.25);
+    ctx.fillStyle = rgb(dk);
+    ctx.fillRect(Math.floor(x + 3), baseY - h, 2, h);
     ctx.fillStyle = rgb(color);
-    ctx.fillRect(Math.floor(x + 2), baseY - h, 2, h);
-    ctx.fillRect(Math.floor(x), baseY - h, 6, 4);
-    ctx.fillRect(Math.floor(x + 1), baseY - h - 3, 4, 3);
+    ctx.fillRect(Math.floor(x), baseY - h, 8, 5);
+    ctx.fillRect(Math.floor(x + 1), baseY - h - 4, 6, 4);
+    ctx.fillRect(Math.floor(x + 2), baseY - h - 7, 4, 3);
+    var hi = lerpColor(color, [255, 255, 255], 0.2);
+    ctx.fillStyle = rgb(hi);
+    ctx.fillRect(Math.floor(x + 1), baseY - h, 2, 1);
 }
 
 function drawPillar(x, baseY, h, color) {
+    var dk = lerpColor(color, [0, 0, 0], 0.3);
+    ctx.fillStyle = rgb(dk);
+    ctx.fillRect(Math.floor(x + 1), baseY - h, 2, h);
     ctx.fillStyle = rgb(color);
-    ctx.fillRect(Math.floor(x), baseY - h, 4, h);
-    ctx.fillRect(Math.floor(x - 1), baseY - h, 6, 2);
+    ctx.fillRect(Math.floor(x), baseY - h, 5, h);
+    ctx.fillRect(Math.floor(x - 1), baseY - h, 7, 2);
+    ctx.fillRect(Math.floor(x - 1), baseY - 2, 7, 2);
 }
 
 function drawRock(x, baseY, h, color) {
+    var rh = Math.min(h, 10);
+    var dk = lerpColor(color, [0, 0, 0], 0.3);
+    ctx.fillStyle = rgb(dk);
+    ctx.fillRect(Math.floor(x + 1), baseY - rh, 7, rh);
     ctx.fillStyle = rgb(color);
-    var rh = Math.min(h, 8);
-    ctx.fillRect(Math.floor(x), baseY - rh, 6, rh);
-    ctx.fillRect(Math.floor(x + 1), baseY - rh - 2, 4, 2);
+    ctx.fillRect(Math.floor(x), baseY - rh, 7, rh);
+    ctx.fillRect(Math.floor(x + 1), baseY - rh - 2, 5, 2);
+    var hi = lerpColor(color, [255, 255, 255], 0.2);
+    ctx.fillStyle = rgb(hi);
+    ctx.fillRect(Math.floor(x + 1), baseY - rh, 2, 2);
 }
 
 function drawGround() {
-    var gc = transitionedColor('ground');
+    var gc  = transitionedColor('ground');
     var gc2 = transitionedColor('groundAlt');
+    var gdk = transitionedColor('groundDark');
+    ctx.fillStyle = rgb(gdk);
+    ctx.fillRect(0, GROUND_Y + 1, W, H - GROUND_Y - 1);
     ctx.fillStyle = rgb(gc);
     ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
 
-    var groundOffset = Math.floor(game.frameCount * game.speed) % 4;
+    var groundOffset = Math.floor(game.frameCount * game.speed) % 6;
     ctx.fillStyle = rgb(gc2);
-    for (var x = -groundOffset; x < W; x += 4) {
-        ctx.fillRect(x, GROUND_Y, 2, 1);
-        ctx.fillRect(x + 2, GROUND_Y + 2, 2, 1);
+    for (var x = -groundOffset; x < W; x += 6) {
+        ctx.fillRect(x, GROUND_Y, 3, 1);
+        ctx.fillRect(x + 3, GROUND_Y + 3, 3, 1);
+        ctx.fillRect(x, GROUND_Y + 6, 3, 1);
     }
 
     var accent = transitionedColor('accent');
-    ctx.fillStyle = rgba(accent, 0.3);
+    ctx.fillStyle = rgba(accent, 0.4);
     ctx.fillRect(0, GROUND_Y, W, 1);
+
+    ctx.fillStyle = rgba(gdk, 0.5);
+    ctx.fillRect(0, GROUND_Y + 2, W, 1);
+}
+
+function drawAtmParticles() {
+    var b = biome();
+    var atmC = b.atmColor;
+
+    for (var i = 0; i < atmParticles.length; i++) {
+        var p = atmParticles[i];
+        var alpha = Math.min(1, p.life / 20) * (1 - p.life / p.maxLife) * 0.7;
+        if (alpha < 0.02) continue;
+
+        if (p.type === 'leaves') {
+            ctx.save();
+            ctx.translate(Math.floor(p.x), Math.floor(p.y));
+            ctx.fillStyle = rgba(atmC, alpha);
+            ctx.fillRect(-1, 0, 3, 1);
+            ctx.fillRect(0, -1, 1, 3);
+            ctx.restore();
+        } else if (p.type === 'sparks') {
+            var bright = lerpColor(atmC, [255, 255, 200], 0.5);
+            ctx.fillStyle = rgba(bright, alpha * 1.4);
+            ctx.fillRect(Math.floor(p.x), Math.floor(p.y), Math.ceil(p.size), 1);
+        } else if (p.type === 'snow') {
+            ctx.fillStyle = rgba([220, 240, 255], alpha);
+            ctx.fillRect(Math.floor(p.x), Math.floor(p.y), Math.ceil(p.size), Math.ceil(p.size));
+        } else if (p.type === 'neon') {
+            var pulse = Math.sin(p.pulse) * 0.4 + 0.6;
+            ctx.fillStyle = rgba(atmC, alpha * pulse);
+            ctx.fillRect(Math.floor(p.x), Math.floor(p.y), 1, 1);
+            ctx.fillStyle = rgba(atmC, alpha * pulse * 0.3);
+            ctx.fillRect(Math.floor(p.x) - 1, Math.floor(p.y) - 1, 3, 3);
+        }
+    }
 }
 
 function drawPlayer() {
-    var skinDef = SKINS.find(function(s) { return s.id === save.activeSkin; }) || SKINS[0];
-    var colors = getSkinColors(skinDef);
-    var sprite = player.crouching ? PLAYER_CROUCH : PLAYER_SPRITE;
-    var py = player.crouching ? GROUND_Y - 5 : player.y;
+    var skinDef = null;
+    for (var i = 0; i < SKINS.length; i++) {
+        if (SKINS[i].id === save.activeSkin) { skinDef = SKINS[i]; break; }
+    }
+    if (!skinDef) skinDef = SKINS[0];
 
-    if (player.animFrame === 1 && player.grounded && !player.crouching) {
-        var runSprite = [];
-        for (var r = 0; r < PLAYER_SPRITE.length; r++) {
-            runSprite.push(PLAYER_SPRITE[r].slice());
-        }
-        runSprite[7] = [0,0,1,0,0,0,1,0,0];
-        runSprite[8] = [0,1,1,0,0,0,0,1,0];
-        drawSprite(player.x, py, runSprite, colors);
+    var colors = getSkinColors(skinDef);
+    var outlineColor = skinDef.colors.outline;
+    var sprite;
+    var py = player.crouching ? GROUND_Y - 6 : player.y;
+
+    if (player.crouching) {
+        sprite = PLAYER_CROUCH;
+    } else if (!player.grounded) {
+        sprite = PLAYER_JUMP;
     } else {
-        drawSprite(player.x, py, sprite, colors);
+        var frames = [PLAYER_IDLE, PLAYER_RUN1, PLAYER_IDLE, PLAYER_RUN2];
+        sprite = frames[player.animFrame % 4];
+    }
+
+    drawOutlinedSprite(player.x, py, sprite, colors, outlineColor);
+}
+
+function drawObstacle(o) {
+    var c  = o.color;
+    var dk = o.dark;
+    var hi = o.highlight;
+
+    if (o.flying) {
+        ctx.fillStyle = rgb(dk);
+        ctx.fillRect(Math.floor(o.x + 1), Math.floor(o.y + 1), o.w, o.h);
+        ctx.fillStyle = rgb(c);
+        ctx.fillRect(Math.floor(o.x), Math.floor(o.y), o.w, o.h);
+        ctx.fillStyle = rgb(hi);
+        ctx.fillRect(Math.floor(o.x), Math.floor(o.y), o.w, 1);
+        ctx.fillRect(Math.floor(o.x), Math.floor(o.y), 1, o.h);
+
+        var wf = Math.sin(o.wingTimer * 0.25) > 0 ? 1 : 0;
+        ctx.fillStyle = rgba(c, 0.7);
+        if (wf === 0) {
+            ctx.fillRect(Math.floor(o.x - 3), Math.floor(o.y), 3, 2);
+            ctx.fillRect(Math.floor(o.x + o.w), Math.floor(o.y), 3, 2);
+        } else {
+            ctx.fillRect(Math.floor(o.x - 2), Math.floor(o.y + 1), 2, 2);
+            ctx.fillRect(Math.floor(o.x + o.w), Math.floor(o.y + 1), 2, 2);
+        }
+
+        ctx.fillStyle = rgb([255, 80, 80]);
+        ctx.fillRect(Math.floor(o.x + 1), Math.floor(o.y + 1), 1, 1);
+        ctx.fillRect(Math.floor(o.x + o.w - 2), Math.floor(o.y + 1), 1, 1);
+
+    } else {
+        ctx.fillStyle = rgb(dk);
+        ctx.fillRect(Math.floor(o.x + 1), Math.floor(o.y + 1), o.w, o.h);
+        ctx.fillStyle = rgb(c);
+        ctx.fillRect(Math.floor(o.x), Math.floor(o.y), o.w, o.h);
+        ctx.fillStyle = rgb(hi);
+        ctx.fillRect(Math.floor(o.x), Math.floor(o.y), o.w, 1);
+        ctx.fillRect(Math.floor(o.x), Math.floor(o.y), 1, o.h);
+        ctx.fillStyle = rgb(dk);
+        ctx.fillRect(Math.floor(o.x + o.w - 1), Math.floor(o.y), 1, o.h);
+        ctx.fillRect(Math.floor(o.x), Math.floor(o.y + o.h - 1), o.w, 1);
+
+        ctx.fillStyle = rgba([0, 0, 0], 0.3);
+        ctx.fillRect(Math.floor(o.x + 1), Math.floor(o.y + 3), 1, 1);
+        ctx.fillRect(Math.floor(o.x + 3), Math.floor(o.y + 6), 1, 1);
     }
 }
 
 function drawObstacles() {
     for (var i = 0; i < obstacles.length; i++) {
-        var o = obstacles[i];
-        var c = o.color;
-        ctx.fillStyle = rgb(c);
-
-        if (o.flying) {
-            ctx.fillRect(Math.floor(o.x), Math.floor(o.y), o.w, o.h);
-            ctx.fillStyle = rgba(c, 0.5);
-            ctx.fillRect(Math.floor(o.x - 1), Math.floor(o.y + 1), 1, 1);
-            ctx.fillRect(Math.floor(o.x + o.w), Math.floor(o.y + 1), 1, 1);
-        } else {
-            ctx.fillRect(Math.floor(o.x), Math.floor(o.y), o.w, o.h);
-            var highlight = lerpColor(c, [255, 255, 255], 0.2);
-            ctx.fillStyle = rgb(highlight);
-            ctx.fillRect(Math.floor(o.x), Math.floor(o.y), o.w, 1);
-        }
+        drawObstacle(obstacles[i]);
     }
 }
 
 function drawCoins() {
+    var b = biome();
     for (var i = 0; i < coins.length; i++) {
         var c = coins[i];
-        var b = biome();
-        var sprite = c.frame === 0 ? COIN_SPRITE : COIN_ANIM;
-        var ccolor = b.coinColor || [255, 215, 0];
-        drawSprite(c.x, c.y, sprite, { 1: rgb(ccolor) });
+        var ccolor   = b.coinColor    || [255, 215, 0];
+        var chi      = b.coinHighlight|| [255, 240, 100];
+        var csh      = b.coinShadow   || [180, 130, 0];
+        var sprite   = COIN_FRAMES[c.frame];
+        var colorMap = { 1: rgb(ccolor), 2: rgb(chi), 3: rgb(csh) };
+
+        ctx.fillStyle = rgba([0, 0, 0], 0.3);
+        ctx.fillRect(Math.floor(c.x + 1), Math.floor(c.y + 1), c.w, c.h);
+
+        drawSprite(c.x, c.y, sprite, colorMap);
     }
 }
 
 function drawWalls() {
     for (var i = 0; i < walls.length; i++) {
         var wall = walls[i];
-        if (wall.destroyed) {
-            continue;
-        }
+        if (wall.destroyed) continue;
 
-        var c = wall.color;
+        var c  = wall.color;
+        var dk = wall.dark;
+
+        ctx.fillStyle = rgb(dk);
+        ctx.fillRect(Math.floor(wall.x + 1), 1, wall.w, GROUND_Y - 1);
         ctx.fillStyle = rgb(c);
         ctx.fillRect(Math.floor(wall.x), 0, wall.w, GROUND_Y);
 
-        var crackColor = lerpColor(c, [0, 0, 0], 0.4);
+        var hi = lerpColor(c, [255, 255, 255], 0.2);
+        ctx.fillStyle = rgb(hi);
+        ctx.fillRect(Math.floor(wall.x), 0, 1, GROUND_Y);
+
+        var crackColor = lerpColor(c, [0, 0, 0], 0.45);
         ctx.fillStyle = rgb(crackColor);
-        for (var cy = 5; cy < GROUND_Y; cy += 12) {
-            ctx.fillRect(Math.floor(wall.x + 1), cy, 2, 1);
-            ctx.fillRect(Math.floor(wall.x + 3), cy + 4, 2, 1);
+        for (var cy = 6; cy < GROUND_Y; cy += 14) {
+            ctx.fillRect(Math.floor(wall.x + 1), cy,     3, 1);
+            ctx.fillRect(Math.floor(wall.x + 2), cy + 2, 1, 2);
+            ctx.fillRect(Math.floor(wall.x + 4), cy + 6, 2, 1);
         }
 
         if (wall.windowStart >= 0 && wall.windowStart <= wall.windowDuration) {
-            var pulse = Math.sin(game.frameCount * 0.3) * 0.3 + 0.7;
-            ctx.fillStyle = rgba([255, 255, 100], pulse * 0.5);
+            var pulse = Math.sin(game.frameCount * 0.35) * 0.3 + 0.7;
+            ctx.fillStyle = rgba([255, 255, 100], pulse * 0.45);
             ctx.fillRect(Math.floor(wall.x - 1), 0, wall.w + 2, GROUND_Y);
 
             var progress = wall.windowStart / wall.windowDuration;
             var barW = wall.w;
-            var barH = 2;
-            var barY = GROUND_Y - 4;
-            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            var barH = 3;
+            var barY = GROUND_Y - 5;
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
             ctx.fillRect(Math.floor(wall.x), barY, barW, barH);
             var r = Math.floor(255 * progress);
             var g = Math.floor(255 * (1 - progress));
@@ -1036,6 +1431,7 @@ function draw() {
     }
 
     drawBackground();
+    drawAtmParticles();
     drawGround();
     drawWalls();
     drawObstacles();
