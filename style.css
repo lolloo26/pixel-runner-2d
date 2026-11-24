@@ -1029,6 +1029,24 @@ body.mobile-portrait #orientation-prompt {
     }
 }
 
+#audio-status {
+    position: absolute;
+    top: max(88px, calc(env(safe-area-inset-top) + 82px));
+    left: 50%;
+    z-index: 34;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    padding: 7px 12px;
+    transform: translateX(-50%);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: 999px;
+    background: rgba(12, 20, 35, 0.88);
+    color: #ffe9a8;
+    font-size: clamp(0.65rem, 2.5vw, 0.82rem);
+    text-align: center;
+    pointer-events: none;
+}
+
 @media (hover: none) and (pointer: coarse) {
     #mobile-settings-button {
         display: flex;

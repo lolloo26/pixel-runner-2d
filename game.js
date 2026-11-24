@@ -367,6 +367,7 @@ var ui = {
     over:         document.getElementById('game-over'),
     pause:        document.getElementById('pause-menu'),
     musicToggle:  document.getElementById('music-toggle'),
+    audioStatus:  document.getElementById('audio-status'),
     mobileSettings: document.getElementById('mobile-settings-menu'),
     mobileSettingsButton: document.getElementById('mobile-settings-button'),
     audioToggle:  document.getElementById('mobile-audio-toggle'),
@@ -467,12 +468,25 @@ var music = (function() {
     var enabled = save.audioEnabled;
     var paused = false;
     var currentIndex = -1;
-    var volume = 0.32;
+    var volume = 0.75;
     var crossfadeDuration = 1.8;
 
     function showAudioError(message) {
+        if (location.protocol === 'file:') {
+            message = 'Apri il gioco da http://localhost:8787 per ascoltare la musica';
+        }
         ui.musicToggle.title = message;
         ui.audioToggle.title = message;
+        if (ui.audioStatus) {
+            ui.audioStatus.textContent = message;
+            ui.audioStatus.classList.remove('hidden');
+        }
+    }
+
+    function clearAudioError() {
+        if (!ui.audioStatus) return;
+        ui.audioStatus.textContent = '';
+        ui.audioStatus.classList.add('hidden');
     }
 
     function prepareAudioGraph() {
@@ -586,13 +600,17 @@ var music = (function() {
             return;
         }
         if (result && typeof result.catch === 'function') {
-            result.catch(function(error) {
+            result.then(function() {
+                clearAudioError();
+            }, function(error) {
                 track.active = false;
                 setTrackLevel(track, 0, 0);
-                if (!error || error.name !== 'NotAllowedError') {
-                    showAudioError('Riproduzione non disponibile: ' + paths[index]);
-                }
+                showAudioError(error && error.name === 'NotAllowedError' ?
+                    'Tocca di nuovo per avviare la musica' :
+                    'Riproduzione non disponibile: ' + paths[index]);
             });
+        } else {
+            clearAudioError();
         }
     }
 
@@ -624,9 +642,9 @@ var music = (function() {
             if (context && context.state !== 'running') {
                 context.resume().catch(function(error) {
                     unlocked = false;
-                    if (error.name !== 'NotAllowedError') {
-                        showAudioError('Impossibile avviare l’audio del browser');
-                    }
+                    showAudioError(error && error.name === 'NotAllowedError' ?
+                        'Tocca di nuovo per avviare la musica' :
+                        'Impossibile avviare l’audio del browser');
                 });
             }
         }
@@ -1145,6 +1163,7 @@ function initializeRun(attractMode) {
 }
 
 function startGame() {
+    music.unlock();
     requestMobilePresentation();
     initializeRun(false);
     updateOrientationState();
@@ -2435,7 +2454,7 @@ document.addEventListener('pointerdown', function firstMobileTouch() {
     if (isMobileTouch()) requestMobilePresentation();
 }, { once: true });
 
-document.addEventListener('pointerdown', unlockMusic);
+document.addEventListener('pointerdown', unlockMusic, { capture: true });
 document.addEventListener('keydown', unlockMusic);
 ui.audioToggle.onclick = toggleAudio;
 ui.musicToggle.onclick = toggleAudio;
