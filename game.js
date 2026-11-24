@@ -3,11 +3,6 @@
 var canvas = document.getElementById('game-canvas');
 var ctx = canvas.getContext('2d');
 var gameContainer = document.getElementById('game-container');
-var chestCanvas = document.getElementById('chest-canvas');
-var chestCtx = chestCanvas.getContext('2d');
-chestCanvas.width = 64;
-chestCanvas.height = 64;
-chestCtx.imageSmoothingEnabled = false;
 
 var W = 320;
 var H = 180;
@@ -255,13 +250,19 @@ var SKINS = [
     { id: 'robot',   name: 'ROBOT',     rarity: 'rare',      colors: { body: '#aabbcc', eye: '#00ffff', outline: '#445566' } },
     { id: 'magma',   name: 'MAGMA',     rarity: 'rare',      colors: { body: '#ff4422', eye: '#ffff00', outline: '#8a1800' } },
     { id: 'ice',     name: 'GHIACCIO',  rarity: 'epic',      colors: { body: '#88ddff', eye: '#ffffff', outline: '#3377aa' } },
-    { id: 'gold',    name: 'DORATO',    rarity: 'legendary', colors: { body: '#ffd700', eye: '#ff4400', outline: '#886600' } }
+    { id: 'gold',    name: 'DORATO',    rarity: 'legendary', colors: { body: '#ffd700', eye: '#ff4400', outline: '#886600' } },
+    { id: 'piggy',   name: 'MAIALINO',  rarity: 'legendary', colors: { body: '#f48aaa', eye: '#50243d', outline: '#a34263' } },
+    { id: 'matrix',  name: 'MATRIX',    rarity: 'legendary', colors: { body: '#07140c', eye: '#39ff14', outline: '#0a5b20' } },
+    { id: 'frosted', name: 'TRASPARENTE OPACA', rarity: 'secret', colors: { body: 'rgba(190,235,255,0.68)', eye: 'rgba(255,255,255,0.95)', outline: 'rgba(225,250,255,0.86)' } }
 ];
 
 var RARITY_WEIGHTS = { common: 40, rare: 25, epic: 15, legendary: 5 };
-var RARITY_LABELS  = { common: 'COMUNE', rare: 'RARO', epic: 'EPICO', legendary: 'LEGGENDARIO' };
-var RARITY_COLORS  = { common: '#aaaaaa', rare: '#55aaff', epic: '#cc55ff', legendary: '#ffd700' };
-var DUPE_REFUND    = { common: 10, rare: 20, epic: 35, legendary: 50 };
+var RARITY_LABELS  = { common: 'COMUNE', rare: 'RARO', epic: 'EPICO', legendary: 'LEGGENDARIO', secret: '???' };
+var RARITY_COLORS  = { common: '#aaaaaa', rare: '#55aaff', epic: '#cc55ff', legendary: '#ffd700', secret: '#bdf7ff' };
+var DUPE_REFUND    = { common: 240, rare: 480, epic: 840, legendary: 1200, secret: 2400 };
+var CHEST_COST = 1200;
+var GOLD_SLOT_CHANCE = 0.05;
+var GOLD_LEGENDARY_CHANCE = 0.7;
 
 var PLAYER_IDLE = [
     [0,0,0,1,1,1,1,0,0,0],
@@ -396,6 +397,8 @@ var ui = {
     finalCoins:   document.getElementById('final-coins'),
     newRecord:    document.getElementById('new-record'),
     chestResult:  document.getElementById('chest-result'),
+    rouletteViewport: document.getElementById('roulette-viewport'),
+    rouletteTrack: document.getElementById('roulette-track'),
     chestClose:   document.getElementById('chest-close-btn')
 };
 
@@ -471,12 +474,27 @@ var music = (function() {
     var unlocked = false;
     var enabled = save.audioEnabled;
     var paused = false;
+    var mode = 'menu';
     var currentIndex = -1;
     var storedMusicVolume = parseFloat(localStorage.getItem('pr_music_volume'));
     var storedSfxVolume = parseFloat(localStorage.getItem('pr_sfx_volume'));
     var volume = isFinite(storedMusicVolume) ? Math.max(0, Math.min(1, storedMusicVolume)) : 0.75;
     var sfxVolume = isFinite(storedSfxVolume) ? Math.max(0, Math.min(1, storedSfxVolume)) : 0.4;
     var crossfadeDuration = 1.8;
+    var menuGain = null;
+    var menuLevel = 0;
+    var menuFade = null;
+    var menuTimer = null;
+    var menuNextTime = 0;
+    var menuBar = 0;
+    var menuBpm = 72;
+    var menuChords = [
+        [130.81, 164.81, 196, 246.94, 329.63],
+        [110, 130.81, 164.81, 220, 261.63],
+        [87.31, 110, 130.81, 174.61, 220],
+        [98, 123.47, 146.83, 196, 246.94]
+    ];
+    var menuMelody = [523.25, 587.33, 659.25, 783.99, 698.46, 659.25, 587.33, 523.25];
 
     function showAudioError(message) {
         if (location.protocol === 'file:') {
@@ -510,6 +528,9 @@ var music = (function() {
             compressor.attack.value = 0.003;
             compressor.release.value = 0.18;
             compressor.connect(context.destination);
+            menuGain = context.createGain();
+            menuGain.gain.value = 0;
+            menuGain.connect(compressor);
             sfxBus = context.createGain();
             sfxBus.gain.value = enabled ? sfxVolume : 0;
             sfxBus.connect(compressor);
@@ -552,7 +573,7 @@ var music = (function() {
         oscillator.stop(start + duration + 0.01);
     }
 
-    function playNoise(start, duration, peak, filterType, filterFrequency) {
+    function playNoise(start, duration, peak, filterType, filterFrequency, destination) {
         var frameCount = Math.max(1, Math.floor(context.sampleRate * duration));
         var buffer = context.createBuffer(1, frameCount, context.sampleRate);
         var data = buffer.getChannelData(0);
@@ -570,13 +591,103 @@ var music = (function() {
         envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration);
         source.connect(filter);
         filter.connect(envelope);
-        envelope.connect(sfxBus);
+        envelope.connect(destination || sfxBus);
         source.start(start);
         source.stop(start + duration + 0.01);
     }
 
-    function playSfx(type, perfect) {
+    function rampMenuGain(target, duration) {
+        if (!menuGain || !context || context.state === 'closed') return;
+        var now = context.currentTime;
+        var gain = menuGain.gain;
+        var from = menuLevel;
+        if (menuFade) {
+            if (now >= menuFade.end) {
+                from = menuFade.to;
+            } else {
+                var progress = Math.max(0, (now - menuFade.start) / (menuFade.end - menuFade.start));
+                from = menuFade.from + (menuFade.to - menuFade.from) * progress;
+            }
+        }
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(from, now);
+        if (duration > 0) {
+            gain.linearRampToValueAtTime(target, now + duration);
+            menuFade = { from: from, to: target, start: now, end: now + duration };
+        } else {
+            gain.setValueAtTime(target, now);
+            menuFade = null;
+        }
+        menuLevel = target;
+    }
+
+    function scheduleMenuTone(frequency, start, duration, peak, type, endFrequency) {
+        var oscillator = context.createOscillator();
+        var envelope = context.createGain();
+        oscillator.type = type;
+        oscillator.frequency.setValueAtTime(frequency, start);
+        if (endFrequency) oscillator.frequency.exponentialRampToValueAtTime(endFrequency, start + duration);
+        envelope.gain.setValueAtTime(0.0001, start);
+        envelope.gain.linearRampToValueAtTime(peak, start + Math.min(0.65, duration * 0.35));
+        envelope.gain.setValueAtTime(peak, start + duration * 0.68);
+        envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+        oscillator.connect(envelope);
+        envelope.connect(menuGain);
+        oscillator.start(start);
+        oscillator.stop(start + duration + 0.02);
+    }
+
+    function scheduleMenuBar(start, bar) {
+        var beatDuration = 60 / menuBpm;
+        var barDuration = beatDuration * 4;
+        var chord = menuChords[bar % menuChords.length];
+        for (var i = 0; i < chord.length; i++) {
+            scheduleMenuTone(chord[i], start, barDuration * 0.94, i === 0 ? 0.07 : 0.045, i === 0 ? 'sine' : 'triangle');
+        }
+        scheduleMenuTone(chord[0] / 2, start, barDuration * 0.8, 0.09, 'sine', chord[0] / 2.4);
+        for (var beat = 0; beat < 4; beat++) {
+            var beatTime = start + beat * beatDuration;
+            if (beat % 2 === 0) {
+                scheduleMenuTone(78, beatTime, 0.22, 0.075, 'sine', 43);
+            }
+            if (beat > 0) playNoise(beatTime, 0.035, 0.012, 'highpass', 4800, menuGain);
+        }
+        var melodyIndex = (bar * 2) % menuMelody.length;
+        scheduleMenuTone(menuMelody[melodyIndex], start + beatDuration * 1.5, 0.7, 0.034, 'sine');
+        scheduleMenuTone(menuMelody[(melodyIndex + 3) % menuMelody.length], start + beatDuration * 3, 0.55, 0.026, 'sine');
+    }
+
+    function scheduleMenuMusic() {
+        if (!context || !menuGain || mode !== 'menu' || !enabled || paused) return;
+        var barDuration = 60 / menuBpm * 4;
+        var scheduleUntil = context.currentTime + 0.6;
+        while (menuNextTime < scheduleUntil) {
+            scheduleMenuBar(menuNextTime, menuBar++);
+            menuNextTime += barDuration;
+        }
+    }
+
+    function startMenuMusic() {
+        if (!context || !menuGain || mode !== 'menu' || !enabled || paused) return;
+        rampMenuGain(volume, 1.2);
+        if (menuTimer) return;
+        menuNextTime = context.currentTime + 0.08;
+        menuBar = 0;
+        scheduleMenuMusic();
+        menuTimer = setInterval(scheduleMenuMusic, 100);
+    }
+
+    function stopMenuMusic(duration) {
+        if (menuTimer) {
+            clearInterval(menuTimer);
+            menuTimer = null;
+        }
+        rampMenuGain(0, duration);
+    }
+
+    function playSfx(type, detail) {
         if (!enabled || sfxVolume <= 0 || !unlocked || !context || !sfxBus || context.state === 'closed') return;
+        if (mode === 'menu' && type !== 'ui' && type !== 'chestStart' && type !== 'chestTick' && type !== 'chestReveal') return;
         var now = context.currentTime;
         if (type === 'jump') {
             playTone(330, 570, now, 0.12, 'sine', 0.13);
@@ -590,9 +701,31 @@ var music = (function() {
             playNoise(now + 0.025, 0.16, 0.075, 'highpass', 2200);
             playTone(900, 1320, now + 0.035, 0.15, 'sine', 0.045);
             playTone(1480, 1850, now + 0.075, 0.13, 'sine', 0.035);
-            if (perfect) {
+            if (detail) {
                 playTone(1240, 1560, now + 0.025, 0.2, 'sine', 0.09);
                 playTone(1860, 2200, now + 0.09, 0.18, 'sine', 0.065);
+            }
+        } else if (type === 'chestStart') {
+            playTone(240, 680, now, 0.24, 'triangle', 0.13);
+            playTone(420, 820, now + 0.08, 0.2, 'sine', 0.08);
+        } else if (type === 'chestTick') {
+            playTone(1680, 1120, now, 0.028, 'square', 0.055);
+        } else if (type === 'chestReveal') {
+            var reveal = detail || {};
+            if (reveal.gold && reveal.rarity === 'secret') {
+                playTone(110, 55, now, 0.5, 'sine', 0.2);
+                playTone(660, 990, now, 0.8, 'sine', 0.12);
+                playTone(990, 1480, now + 0.08, 0.9, 'sine', 0.1);
+                playTone(1480, 1980, now + 0.16, 1.1, 'sine', 0.08);
+            } else if (reveal.gold) {
+                playTone(130, 65, now, 0.38, 'triangle', 0.2);
+                playTone(523, 784, now, 0.55, 'sine', 0.15);
+                playTone(659, 988, now + 0.08, 0.7, 'sine', 0.13);
+                playTone(784, 1175, now + 0.16, 0.85, 'sine', 0.11);
+            } else {
+                var revealBase = reveal.rarity === 'legendary' ? 784 : reveal.rarity === 'epic' ? 659 : reveal.rarity === 'rare' ? 554 : 440;
+                playTone(revealBase, revealBase * 1.25, now, 0.3, 'sine', 0.1);
+                playTone(revealBase * 1.5, revealBase * 2, now + 0.08, 0.4, 'sine', 0.085);
             }
         } else if (type === 'ui') {
             playTone(520, 360, now, 0.055, 'sine', 0.075);
@@ -705,6 +838,7 @@ var music = (function() {
     }
 
     function setBiome(index) {
+        if (mode !== 'game') return;
         index = (index + tracks.length) % tracks.length;
         var previousIndex = currentIndex;
         currentIndex = index;
@@ -725,6 +859,37 @@ var music = (function() {
         }
     }
 
+    function setMode(nextMode, index) {
+        if (nextMode === 'menu') {
+            var enteredMenu = mode !== 'menu';
+            mode = 'menu';
+            if (enteredMenu) {
+                for (var i = 0; i < tracks.length; i++) {
+                    if (!tracks[i].active) continue;
+                    if (i !== currentIndex) {
+                        stopTrack(i, true);
+                        continue;
+                    }
+                    setTrackLevel(tracks[i], 0, crossfadeDuration);
+                    scheduleStop(i, crossfadeDuration, true);
+                }
+            }
+            if (enabled && unlocked && !paused) startMenuMusic();
+            return;
+        }
+
+        if (mode === 'menu') {
+            for (var j = 0; j < tracks.length; j++) {
+                if (tracks[j].active) stopTrack(j, true);
+            }
+            if (index !== undefined) currentIndex = index;
+        }
+        mode = 'game';
+        stopMenuMusic(crossfadeDuration);
+        if (index !== undefined) setBiome(index);
+        else if (currentIndex >= 0) setBiome(currentIndex);
+    }
+
     function unlock(retry) {
         if (!unlocked) {
             prepareAudioGraph();
@@ -740,7 +905,10 @@ var music = (function() {
         }
         if (currentIndex < 0) currentIndex = 0;
         if (retry && tracks[currentIndex].audio.paused) tracks[currentIndex].active = false;
-        if (enabled && !paused) setBiome(currentIndex);
+        if (enabled && !paused) {
+            if (mode === 'menu') startMenuMusic();
+            else setBiome(currentIndex);
+        }
     }
 
     function setEnabled(value) {
@@ -750,8 +918,10 @@ var music = (function() {
             for (var i = 0; i < tracks.length; i++) {
                 if (tracks[i].active) stopTrack(i, true);
             }
-        } else if (unlocked && !paused && currentIndex >= 0) {
-            setBiome(currentIndex);
+            stopMenuMusic(0.025);
+        } else if (unlocked && !paused) {
+            if (mode === 'menu') startMenuMusic();
+            else if (currentIndex >= 0) setBiome(currentIndex);
         }
     }
 
@@ -759,17 +929,22 @@ var music = (function() {
         if (paused === value) return;
         paused = value;
         if (paused) {
+            if (mode === 'menu') stopMenuMusic(0.25);
             for (var i = 0; i < tracks.length; i++) {
                 if (!tracks[i].active) continue;
                 setTrackLevel(tracks[i], 0, 0.25);
                 scheduleStop(i, 0.25, false);
             }
-        } else if (enabled && unlocked && currentIndex >= 0) {
-            for (var j = 0; j < tracks.length; j++) {
-                if (j !== currentIndex && tracks[j].active) stopTrack(j, true);
+        } else if (enabled && unlocked) {
+            if (mode === 'menu') {
+                startMenuMusic();
+            } else if (currentIndex >= 0) {
+                for (var j = 0; j < tracks.length; j++) {
+                    if (j !== currentIndex && tracks[j].active) stopTrack(j, true);
+                }
+                startTrack(currentIndex, false);
+                setTrackLevel(tracks[currentIndex], volume, 0.35);
             }
-            startTrack(currentIndex, false);
-            setTrackLevel(tracks[currentIndex], volume, 0.35);
         }
     }
 
@@ -784,7 +959,9 @@ var music = (function() {
     function setMusicVolume(value) {
         volume = Math.max(0, Math.min(1, value));
         localStorage.setItem('pr_music_volume', volume);
-        if (enabled && !paused && currentIndex >= 0 && tracks[currentIndex].active) {
+        if (enabled && !paused && mode === 'menu') {
+            rampMenuGain(volume, 0.08);
+        } else if (enabled && !paused && currentIndex >= 0 && tracks[currentIndex].active) {
             setTrackLevel(tracks[currentIndex], volume, 0.08);
         }
     }
@@ -798,6 +975,7 @@ var music = (function() {
     return {
         unlock: unlock,
         setBiome: setBiome,
+        setMode: setMode,
         setEnabled: setEnabled,
         setPaused: setPaused,
         fadeOut: fadeOut,
@@ -1034,6 +1212,54 @@ function getSkinColors(skinDef) {
     return { 1: skinDef.colors.body, 2: skinDef.colors.eye, 3: skinDef.colors.outline };
 }
 
+function drawSkinOverlay(context, x, y, skinDef, scale, crouching, frame) {
+    scale = scale || 1;
+    frame = frame || 0;
+    var paintPixel = function(column, row, color) {
+        context.fillStyle = color;
+        context.fillRect(Math.floor(x + column * scale), Math.floor(y + row * scale), scale, scale);
+    };
+
+    context.save();
+    if (skinDef.id === 'piggy') {
+        var noseRow = crouching ? 3 : 4;
+        paintPixel(2, 0, '#a34263');
+        paintPixel(2, 1, '#f48aaa');
+        paintPixel(7, 0, '#a34263');
+        paintPixel(7, 1, '#f48aaa');
+        paintPixel(4, noseRow, '#ffc3d1');
+        paintPixel(5, noseRow, '#ffc3d1');
+        paintPixel(4, noseRow + 1, '#a34263');
+        paintPixel(5, noseRow + 1, '#a34263');
+    } else if (skinDef.id === 'matrix') {
+        for (var i = 0; i < 5; i++) {
+            var column = 2 + ((i * 3 + Math.floor(frame / 8)) % 6);
+            var row = 4 + (i % 3);
+            paintPixel(column, row, i % 2 ? '#0dbb37' : '#74ff64');
+        }
+        for (var trail = 0; trail < 4; trail++) {
+            context.globalAlpha *= 0.55 - trail * 0.1;
+            paintPixel(-1 - trail * 2, 3 + ((Math.floor(frame / 5) + trail * 2) % 6), '#39ff14');
+        }
+    } else if (skinDef.id === 'frosted') {
+        context.globalAlpha *= 0.85;
+        paintPixel(3, 1, '#ffffff');
+        paintPixel(4, 1, '#dffaff');
+        paintPixel(6, 3, '#ffffff');
+        paintPixel(2, 6, '#dffaff');
+        paintPixel(7, 7, '#ffffff');
+    }
+    context.restore();
+}
+
+function drawSkinPreview(context, x, y, skinDef, scale, matrix) {
+    context.save();
+    if (skinDef.id === 'frosted') context.globalAlpha *= 0.72;
+    drawSpriteOnCtx(context, x, y, matrix || PLAYER_IDLE, getSkinColors(skinDef), scale || 1);
+    drawSkinOverlay(context, x, y, skinDef, scale || 1, false, 0);
+    context.restore();
+}
+
 function drawOutlinedSprite(sx, sy, matrix, colorMap, outlineColor) {
     var dirs = [[-1,0],[1,0],[0,-1],[0,1]];
     for (var r = 0; r < matrix.length; r++) {
@@ -1228,8 +1454,8 @@ function initializeRun(attractMode) {
     game.speed = 1.2;
     game.baseSpeed = 1.2;
     game.biomeIndex = 0;
+    music.setMode(attractMode ? 'menu' : 'game', 0);
     music.setPaused(false);
-    music.setBiome(0);
     game.prevBiomeIndex = -1;
     game.biomeTransition = 1;
     game.biomeTransitionTimer = 0;
@@ -1423,6 +1649,9 @@ function showShop(fromGameOver) {
 
 function refreshShop() {
     ui.shopCoins.textContent = 'MONETE: ' + save.coins;
+    var chestButton = document.getElementById('buy-chest-btn');
+    chestButton.textContent = 'APRI BAULE (' + CHEST_COST + ' monete)';
+    chestButton.disabled = save.coins < CHEST_COST;
     ui.skinList.innerHTML = '';
 
     for (var i = 0; i < SKINS.length; i++) {
@@ -1435,10 +1664,12 @@ function refreshShop() {
         if (equipped)    item.className += ' equipped';
         else if (owned)  item.className += ' unlocked';
         else             item.className += ' locked';
+        if (skin.rarity === 'secret') item.className += ' secret-skin';
 
         var raritySpan = document.createElement('span');
         raritySpan.className = 'skin-rarity rarity-' + skin.rarity;
         raritySpan.textContent = RARITY_LABELS[skin.rarity];
+        if (skin.rarity === 'secret') raritySpan.setAttribute('aria-label', 'Rarità segreta');
         item.appendChild(raritySpan);
 
         var preview = document.createElement('canvas');
@@ -1448,7 +1679,7 @@ function refreshShop() {
         preview.style.height = '36px';
         var pCtx = preview.getContext('2d');
         pCtx.imageSmoothingEnabled = false;
-        drawSpriteOnCtx(pCtx, 0, 0, PLAYER_IDLE, getSkinColors(skin), 1);
+        drawSkinPreview(pCtx, 0, 0, skin, 1, PLAYER_IDLE);
         item.appendChild(preview);
 
         var nameSpan = document.createElement('span');
@@ -1471,102 +1702,156 @@ function refreshShop() {
 }
 
 function openChest() {
-    if (save.coins < 50) return;
-    save.coins -= 50;
+    if (save.coins < CHEST_COST) return;
+    save.coins -= CHEST_COST;
     persist();
 
     ui.shop.classList.add('hidden');
     ui.chestOverlay.classList.remove('hidden');
     ui.chestResult.classList.add('hidden');
     ui.chestClose.classList.add('hidden');
+    ui.rouletteTrack.innerHTML = '';
+    music.playSfx('chestStart');
 
-    var chestAnim = { phase: 0, timer: 0, shake: 0, opened: false, skin: null };
-
-    var totalWeight = 0;
-    for (var key in RARITY_WEIGHTS) totalWeight += RARITY_WEIGHTS[key];
-    var roll = Math.random() * totalWeight;
-    var cumulative = 0;
-    var chosenRarity = 'common';
-    for (var key in RARITY_WEIGHTS) {
-        cumulative += RARITY_WEIGHTS[key];
-        if (roll < cumulative) { chosenRarity = key; break; }
+    function rollRarity() {
+        var totalWeight = 0;
+        for (var key in RARITY_WEIGHTS) totalWeight += RARITY_WEIGHTS[key];
+        var roll = Math.random() * totalWeight;
+        var cumulative = 0;
+        for (var key in RARITY_WEIGHTS) {
+            cumulative += RARITY_WEIGHTS[key];
+            if (roll < cumulative) return key;
+        }
+        return 'common';
     }
 
-    var candidates = [];
-    for (var i = 0; i < SKINS.length; i++) {
-        if (SKINS[i].rarity === chosenRarity) candidates.push(SKINS[i]);
+    function skinForRarity(rarity) {
+        var candidates = [];
+        for (var i = 0; i < SKINS.length; i++) {
+            if (SKINS[i].rarity === rarity) candidates.push(SKINS[i]);
+        }
+        return candidates[randInt(0, candidates.length - 1)];
     }
-    chestAnim.skin = candidates[randInt(0, candidates.length - 1)];
 
-    var isDupe = save.skins.indexOf(chestAnim.skin.id) >= 0;
+    var goldSlot = Math.random() < GOLD_SLOT_CHANCE;
+    var rewardRarity = goldSlot ? (Math.random() < GOLD_LEGENDARY_CHANCE ? 'legendary' : 'secret') : rollRarity();
+    var rewardSkin = skinForRarity(rewardRarity);
+    var duplicate = save.skins.indexOf(rewardSkin.id) >= 0;
+    var slotCount = 40;
+    var selectedIndex = 32;
+    var slots = [];
 
-    function animateChest() {
-        chestAnim.timer++;
-        chestCtx.clearRect(0, 0, 64, 64);
-
-        if (chestAnim.timer < 60) {
-            var shk = Math.sin(chestAnim.timer * 0.5) * Math.min(chestAnim.timer * 0.05, 2);
-            chestCtx.save();
-            chestCtx.translate(32 + shk, 32);
-            chestCtx.fillStyle = '#d4a017';
-            chestCtx.fillRect(-13, -9, 26, 18);
-            chestCtx.fillStyle = '#aa7700';
-            chestCtx.fillRect(-13, -9, 26, 5);
-            chestCtx.fillStyle = '#ffd700';
-            chestCtx.fillRect(-3, -3, 6, 6);
-            chestCtx.fillStyle = '#886600';
-            chestCtx.fillRect(-13, 0, 26, 1);
-            chestCtx.restore();
-            requestAnimationFrame(animateChest);
-        } else if (chestAnim.timer < 90) {
-            var t = (chestAnim.timer - 60) / 30;
-            chestCtx.save();
-            chestCtx.translate(32, 32);
-            chestCtx.fillStyle = '#d4a017';
-            chestCtx.fillRect(-13, -9 + t * 5, 26, 18 - t * 5);
-            chestCtx.fillStyle = '#aa7700';
-            chestCtx.fillRect(-13, -9 - t * 9, 26, 5);
-            var glow = Math.sin(chestAnim.timer * 0.3) * 0.3 + 0.7;
-            chestCtx.fillStyle = 'rgba(255,215,0,' + glow + ')';
-            chestCtx.fillRect(-9, -7, 18, 5);
-            chestCtx.restore();
-            requestAnimationFrame(animateChest);
-        } else if (chestAnim.timer < 120) {
-            chestCtx.save();
-            chestCtx.translate(32, 20);
-            var colors = getSkinColors(chestAnim.skin);
-            drawSpriteOnCtx(chestCtx, -10, -10, PLAYER_IDLE, colors, 2);
-            chestCtx.restore();
-            var sparkle = (chestAnim.timer - 90) / 30;
-            for (var i = 0; i < 10; i++) {
-                var angle = (i / 10) * Math.PI * 2 + chestAnim.timer * 0.1;
-                var dist = 10 + sparkle * 18;
-                chestCtx.fillStyle = RARITY_COLORS[chestAnim.skin.rarity];
-                chestCtx.fillRect(32 + Math.cos(angle) * dist, 32 + Math.sin(angle) * dist, 2, 2);
-            }
-            requestAnimationFrame(animateChest);
+    for (var i = 0; i < slotCount; i++) {
+        var item;
+        if (i === selectedIndex) {
+            item = goldSlot ? { gold: true } : { gold: false, rarity: rewardRarity, skin: rewardSkin };
+        } else if (Math.random() < GOLD_SLOT_CHANCE) {
+            item = { gold: true };
         } else {
-            chestCtx.save();
-            chestCtx.translate(32, 20);
-            var colors = getSkinColors(chestAnim.skin);
-            drawSpriteOnCtx(chestCtx, -10, -10, PLAYER_IDLE, colors, 2);
-            chestCtx.restore();
+            var rarity = rollRarity();
+            item = { gold: false, rarity: rarity, skin: skinForRarity(rarity) };
+        }
 
-            if (!isDupe) {
-                save.skins.push(chestAnim.skin.id);
-                ui.chestResult.innerHTML = '<span style="color:' + RARITY_COLORS[chestAnim.skin.rarity] + '">' + chestAnim.skin.name + '</span><br><span style="font-size:0.8rem">' + RARITY_LABELS[chestAnim.skin.rarity] + '</span>';
-            } else {
-                var refund = DUPE_REFUND[chestAnim.skin.rarity];
-                save.coins += refund;
-                ui.chestResult.innerHTML = '<span style="color:' + RARITY_COLORS[chestAnim.skin.rarity] + '">' + chestAnim.skin.name + '</span><br><span style="font-size:0.8rem">DOPPIONE! +' + refund + ' monete</span>';
-            }
-            persist();
-            ui.chestResult.classList.remove('hidden');
-            ui.chestClose.classList.remove('hidden');
+        var tile = document.createElement('div');
+        tile.className = 'roulette-slot ' + (item.gold ? 'gold-slot' : 'rarity-' + item.rarity);
+        if (item.gold) {
+            var icon = document.createElement('span');
+            icon.className = 'roulette-gold-icon';
+            icon.textContent = '✦';
+            tile.appendChild(icon);
+            var goldLabel = document.createElement('strong');
+            goldLabel.textContent = 'GOLD';
+            tile.appendChild(goldLabel);
+        } else {
+            var preview = document.createElement('canvas');
+            preview.width = 20;
+            preview.height = 20;
+            preview.className = 'roulette-skin-preview';
+            var previewContext = preview.getContext('2d');
+            previewContext.imageSmoothingEnabled = false;
+            drawSkinPreview(previewContext, 0, 0, item.skin, 2, PLAYER_IDLE);
+            tile.appendChild(preview);
+            var skinName = document.createElement('strong');
+            skinName.textContent = item.skin.name;
+            tile.appendChild(skinName);
+            var rarityName = document.createElement('span');
+            rarityName.textContent = RARITY_LABELS[item.rarity];
+            tile.appendChild(rarityName);
+        }
+        ui.rouletteTrack.appendChild(tile);
+        slots.push({ element: tile });
+    }
+
+    var selectedTile = slots[selectedIndex].element;
+    selectedTile.setAttribute('data-slot-index', selectedIndex);
+    var tickIndex = -1;
+    for (var tick = 0; tick < selectedIndex; tick++) {
+        if (slots[tick].element.offsetLeft + slots[tick].element.offsetWidth / 2 <= ui.rouletteViewport.clientWidth / 2) {
+            tickIndex = tick;
+        } else {
+            break;
         }
     }
 
-    requestAnimationFrame(animateChest);
+    function finishRoulette() {
+        if (!duplicate) {
+            save.skins.push(rewardSkin.id);
+        } else {
+            var refund = DUPE_REFUND[rewardRarity];
+            save.coins += refund;
+        }
+        persist();
+
+        var title = document.createElement('strong');
+        title.className = 'chest-result-title rarity-' + rewardRarity + (goldSlot ? ' gold-result' : '');
+        title.textContent = (goldSlot ? 'GOLD · ' : '') + rewardSkin.name;
+        var rarityLabel = document.createElement('span');
+        rarityLabel.className = 'chest-result-rarity rarity-' + rewardRarity;
+        rarityLabel.textContent = RARITY_LABELS[rewardRarity];
+        ui.chestResult.innerHTML = '';
+        ui.chestResult.appendChild(title);
+        ui.chestResult.appendChild(rarityLabel);
+        if (duplicate) {
+            var duplicateLabel = document.createElement('span');
+            duplicateLabel.className = 'chest-duplicate';
+            duplicateLabel.textContent = 'DOPPIONE! +' + DUPE_REFUND[rewardRarity] + ' monete';
+            ui.chestResult.appendChild(duplicateLabel);
+        }
+        ui.chestResult.classList.remove('hidden');
+        ui.chestClose.classList.remove('hidden');
+        music.playSfx('chestReveal', { rarity: rewardRarity, gold: goldSlot });
+    }
+
+    function animateRoulette(timestamp, startTime) {
+        if (startTime === null) startTime = timestamp;
+        var duration = 6400;
+        var progress = Math.min(1, (timestamp - startTime) / duration);
+        var eased = 1 - Math.pow(1 - progress, 4);
+        var destination = selectedTile.offsetLeft + selectedTile.offsetWidth / 2 - ui.rouletteViewport.clientWidth / 2;
+        var distance = destination * eased;
+        ui.rouletteTrack.style.transform = 'translate3d(' + -distance + 'px, 0, 0)';
+
+        var center = distance + ui.rouletteViewport.clientWidth / 2;
+        while (tickIndex + 1 < slots.length &&
+            slots[tickIndex + 1].element.offsetLeft + slots[tickIndex + 1].element.offsetWidth / 2 <= center) {
+            tickIndex++;
+            music.playSfx('chestTick');
+        }
+
+        if (progress < 1) {
+            requestAnimationFrame(function(nextTimestamp) {
+                animateRoulette(nextTimestamp, startTime);
+            });
+        } else {
+            selectedTile.classList.add('roulette-selected');
+            finishRoulette();
+        }
+    }
+
+    ui.rouletteTrack.style.transform = 'translate3d(0, 0, 0)';
+    requestAnimationFrame(function(timestamp) {
+        animateRoulette(timestamp, null);
+    });
 }
 
 function updatePlayer() {
@@ -2221,8 +2506,12 @@ function drawPlayer() {
         sprite = frames[player.animFrame % 4];
     }
 
+    ctx.save();
+    if (skinDef.id === 'frosted') ctx.globalAlpha *= 0.72;
     drawOutlinedSprite(player.x, py, sprite, colors, outlineColor);
     drawBiomeOutfit(player.x, py);
+    drawSkinOverlay(ctx, player.x, py, skinDef, 1, player.crouching, game.frameCount);
+    ctx.restore();
 }
 
 function drawOutfitPixels(x, y, pixels) {

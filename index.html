@@ -138,12 +138,16 @@
                 <h2>NEGOZIO</h2>
                 <div id="shop-coins" class="coin-display"></div>
                 <div id="skin-selector"></div>
-                <button id="buy-chest-btn">APRI BAULE (50 monete)</button>
+                <button id="buy-chest-btn">APRI BAULE (1200 monete)</button>
                 <button id="back-btn">INDIETRO</button>
             </div>
 
             <div id="chest-overlay" class="overlay-screen hidden">
-                <canvas id="chest-canvas"></canvas>
+                <div class="chest-heading">ROULETTE PREMI</div>
+                <div id="roulette-viewport" aria-label="Roulette premi">
+                    <div id="roulette-track"></div>
+                    <div class="roulette-marker" aria-hidden="true"></div>
+                </div>
                 <div id="chest-result" class="hidden"></div>
                 <button id="chest-close-btn" class="hidden">CONTINUA</button>
             </div>
