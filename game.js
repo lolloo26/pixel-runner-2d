@@ -1385,6 +1385,72 @@ function activeTimingWall() {
     return null;
 }
 
+function positionWallTarget(wall) {
+    var bounds = ui.overlay.getBoundingClientRect();
+    var targetWidth = parseFloat(getComputedStyle(ui.target).width) || 64;
+    var targetRadius = targetWidth / 2;
+    var desiredScale = 1 + 38 / targetHitRadius;
+    var safeRadius = targetRadius * desiredScale + 8;
+    var exclusions = [ui.score, ui.coinCount, ui.biome, ui.prompt, ui.mobileSettingsButton, ui.duck];
+    var positions = [];
+    var step = Math.max(8, Math.min(20, Math.floor(targetRadius / 2)));
+
+    while (!positions.length && safeRadius >= targetRadius + 8) {
+        var minX = bounds.left + safeRadius;
+        var maxX = bounds.right - safeRadius;
+        var minY = bounds.top + safeRadius;
+        var maxY = bounds.bottom - safeRadius;
+        var excludedRects = [];
+
+        for (var i = 0; i < exclusions.length; i++) {
+            var element = exclusions[i];
+            if (!element || element.classList.contains('hidden')) continue;
+            var rect = element.getBoundingClientRect();
+            if (rect.width && rect.height) {
+                excludedRects.push({
+                    left: rect.left - safeRadius,
+                    right: rect.right + safeRadius,
+                    top: rect.top - safeRadius,
+                    bottom: rect.bottom + safeRadius
+                });
+            }
+        }
+
+        for (var y = minY; y <= maxY; y += step) {
+            for (var x = minX; x <= maxX; x += step) {
+                var safe = true;
+                for (var j = 0; j < excludedRects.length; j++) {
+                    var excluded = excludedRects[j];
+                    if (x >= excluded.left && x <= excluded.right && y >= excluded.top && y <= excluded.bottom) {
+                        safe = false;
+                        break;
+                    }
+                }
+                if (safe) positions.push({ x: x, y: y });
+            }
+        }
+
+        if (!positions.length) {
+            if (safeRadius <= targetRadius + 8) break;
+            safeRadius = Math.max(targetRadius + 8, safeRadius - 8);
+        }
+    }
+
+    if (!positions.length) {
+        var fallbackX = Math.max(bounds.left + targetRadius, Math.min(bounds.right - targetRadius, (bounds.left + bounds.right) / 2));
+        var fallbackY = Math.max(bounds.top + targetRadius, Math.min(bounds.bottom - targetRadius, (bounds.top + bounds.bottom) / 2));
+        positions.push({ x: fallbackX, y: fallbackY });
+    }
+
+    var position = positions[Math.floor(Math.random() * positions.length)];
+    wall.targetX = position.x - bounds.left;
+    wall.targetY = position.y - bounds.top;
+    ui.target.style.left = wall.targetX + 'px';
+    ui.target.style.top = wall.targetY + 'px';
+    wall.targetApproachScale = Math.min(desiredScale, (safeRadius - 8) / targetRadius);
+    ui.target.style.setProperty('--approach-scale', wall.targetApproachScale.toFixed(3));
+}
+
 function attemptWallHit(wall) {
     if (!wall || wall.destroyed || wall.windowStart < 0) return false;
     var progress = wall.windowStart / wall.windowDuration;
@@ -1445,6 +1511,7 @@ function updateWalls() {
                 ui.prompt.classList.remove('hit-good');
                 ui.prompt.classList.remove('hidden');
                 ui.target.classList.remove('hidden');
+                positionWallTarget(wall);
             }
         }
 
@@ -1452,7 +1519,8 @@ function updateWalls() {
             wall.windowStart++;
             if (!game.attractMode) {
                 var progress = Math.min(1, wall.windowStart / wall.windowDuration);
-                var approachScale = 1 + (38 / targetHitRadius) * (1 - progress);
+                var maxApproachScale = wall.targetApproachScale || (1 + 38 / targetHitRadius);
+                var approachScale = 1 + (maxApproachScale - 1) * (1 - progress);
                 ui.target.style.setProperty('--approach-scale', approachScale.toFixed(3));
             }
             if (game.attractMode && wall.windowStart / wall.windowDuration >= 0.92) {
