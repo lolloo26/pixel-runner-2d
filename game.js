@@ -26,6 +26,19 @@ var MAX_JUMP_HEIGHT = 42;
 function scaleCanvas() {
     var cw = window.innerWidth;
     var ch = window.innerHeight;
+    var previousGround = GROUND_Y;
+    H = Math.max(180, Math.min(680, Math.round(W * ch / cw)));
+    GROUND_Y = H - 22;
+    canvas.height = H;
+    ctx.imageSmoothingEnabled = false;
+    var groundShift = GROUND_Y - previousGround;
+    if (typeof player !== 'undefined' && groundShift !== 0) {
+        if (player.grounded) player.y += groundShift;
+        for (var i = 0; i < obstacles.length; i++) obstacles[i].y += groundShift;
+        for (var i = 0; i < coins.length; i++) coins[i].y += groundShift;
+        for (var j = 0; j < walls.length; j++) walls[j].h = GROUND_Y;
+        initBgElements();
+    }
     var scaleX = cw / W;
     var scaleY = ch / H;
     var scale = Math.min(scaleX, scaleY);
@@ -39,7 +52,6 @@ function scaleCanvas() {
     canvas.style.top    = oy + 'px';
 }
 
-scaleCanvas();
 window.addEventListener('resize', scaleCanvas);
 
 var BIOMES = [
@@ -263,6 +275,7 @@ var ui = {
     coinCount:    document.getElementById('coin-count'),
     biome:        document.getElementById('biome-indicator'),
     prompt:       document.getElementById('timing-prompt'),
+    duck:         document.getElementById('duck-control'),
     highScore:    document.getElementById('main-highscore'),
     mainCoins:    document.getElementById('main-coins'),
     shopCoins:    document.getElementById('shop-coins'),
@@ -290,6 +303,7 @@ function persist() {
 
 var game = {
     running: false,
+    attractMode: false,
     score: 0,
     sessionCoins: 0,
     speed: 1.6,
@@ -303,7 +317,9 @@ var game = {
     lastWall: 0,
     wallActive: false,
     screenShake: 0,
-    flashAlpha: 0
+    flashAlpha: 0,
+    autoJump: false,
+    autoCrouch: false
 };
 
 var PW = 10;
@@ -319,6 +335,7 @@ var player = {
     crouching: false,
     jumpHeld: false,
     jumpTimer: 0,
+    jumpBuffer: 0,
     animFrame: 0,
     animTimer: 0
 };
@@ -330,6 +347,10 @@ var walls = [];
 var particles = [];
 var atmParticles = [];
 var bgLayers = { far: [], mid: [], stars: [] };
+var loopActive = false;
+var pointerStart = null;
+var hitFeedbackTimer = 0;
+var targetHitRadius = 14;
 
 function rgb(arr) {
     return 'rgb(' + arr[0] + ',' + arr[1] + ',' + arr[2] + ')';
@@ -589,7 +610,7 @@ function spawnWall() {
         dark: b.wallDark,
         active: true,
         windowStart: -1,
-        windowDuration: 44,
+        windowDuration: 0,
         destroyed: false,
         missed: false,
         flashTimer: 0
@@ -637,10 +658,12 @@ function resetPlayer() {
     player.crouching = false;
     player.jumpHeld = false;
     player.jumpTimer = 0;
+    player.jumpBuffer = 0;
 }
 
-function startGame() {
+function initializeRun(attractMode) {
     game.running = true;
+    game.attractMode = attractMode;
     game.score = 0;
     game.sessionCoins = 0;
     game.speed = 1.6;
@@ -655,26 +678,45 @@ function startGame() {
     game.wallActive = false;
     game.screenShake = 0;
     game.flashAlpha = 0;
+    game.autoJump = false;
+    game.autoCrouch = false;
+    hitFeedbackTimer = 0;
 
     resetPlayer();
     obstacles = [];
     coins = [];
     walls = [];
     particles = [];
+    keys = {};
     initBgElements();
 
-    ui.main.classList.add('hidden');
     ui.over.classList.add('hidden');
     ui.shop.classList.add('hidden');
-    ui.game.classList.remove('hidden');
+    ui.main.classList.toggle('hidden', !attractMode);
+    ui.game.classList.toggle('hidden', attractMode);
+    ui.duck.classList.toggle('active', !attractMode && window.matchMedia('(pointer: coarse)').matches);
     ui.prompt.classList.add('hidden');
+    ui.prompt.classList.remove('hit-good');
     ui.newRecord.classList.add('hidden');
     ui.biome.textContent = BIOMES[0].name;
 
-    requestAnimationFrame(loop);
+    ensureLoop();
+}
+
+function startGame() {
+    initializeRun(false);
+}
+
+function startAttract() {
+    initializeRun(true);
 }
 
 function gameOver() {
+    if (game.attractMode) {
+        initializeRun(true);
+        return;
+    }
+
     game.running = false;
 
     var score = Math.floor(game.score);
@@ -688,7 +730,10 @@ function gameOver() {
     persist();
 
     ui.game.classList.add('hidden');
+    ui.duck.classList.remove('active');
     ui.prompt.classList.add('hidden');
+    ui.prompt.classList.remove('hit-good');
+    hitFeedbackTimer = 0;
     ui.over.classList.remove('hidden');
     ui.finalScore.textContent = 'PUNTI: ' + score;
     ui.finalCoins.textContent = 'MONETE: +' + game.sessionCoins;
@@ -706,6 +751,7 @@ function showMenu() {
     ui.main.classList.remove('hidden');
     ui.highScore.textContent = 'RECORD: ' + save.highScore;
     ui.mainCoins.textContent = 'MONETE: ' + save.coins;
+    if (!game.running || !game.attractMode) startAttract();
 }
 
 function showShop(fromGameOver) {
@@ -865,9 +911,25 @@ function openChest() {
 }
 
 function updatePlayer() {
-    var ph = player.crouching ? 6 : PH;
+    if (game.attractMode) {
+        var closest = null;
+        var closestDistance = Infinity;
+        for (var i = 0; i < obstacles.length; i++) {
+            var distance = obstacles[i].x - (player.x + player.w);
+            if (distance >= -obstacles[i].w && distance < closestDistance) {
+                closest = obstacles[i];
+                closestDistance = distance;
+            }
+        }
+        game.autoJump = !!closest && !closest.flying && (player.grounded || (player.jumpHeld && player.jumpTimer < 7)) && closestDistance < Math.max(30, game.speed * 12);
+        game.autoCrouch = !!closest && closest.flying && closestDistance < Math.max(18, game.speed * 8);
+        keys.Space = game.autoJump;
+        keys.ArrowDown = game.autoCrouch;
+    }
 
-    if (keys['Space'] || keys['ArrowUp']) {
+    var jumpInput = keys['Space'] || keys['ArrowUp'] || player.jumpBuffer > 0;
+    if (player.jumpBuffer > 0) player.jumpBuffer--;
+    if (jumpInput) {
         if (player.grounded) {
             player.vy = JUMP_FORCE;
             player.grounded = false;
@@ -882,9 +944,9 @@ function updatePlayer() {
     }
 
     if (keys['ArrowDown']) {
-        player.crouching = true;
+        player.crouching = player.grounded;
         if (!player.grounded) {
-            player.vy += 0.6;
+            player.vy += 2.2;
         }
     } else {
         player.crouching = false;
@@ -892,10 +954,12 @@ function updatePlayer() {
 
     if (!player.grounded) {
         player.vy += GRAVITY;
-        if (player.vy > MAX_FALL) player.vy = MAX_FALL;
+        var maxFall = keys['ArrowDown'] ? MAX_FALL + 4 : MAX_FALL;
+        if (player.vy > maxFall) player.vy = maxFall;
         player.y += player.vy;
     }
 
+    var ph = player.crouching ? 6 : PH;
     var floor = GROUND_Y - ph;
     if (player.y >= floor) {
         player.y = floor;
@@ -912,8 +976,9 @@ function updatePlayer() {
 
 function updateObstacles() {
     game.lastObstacle++;
-    var minGap = Math.max(45, 80 - game.speed * 5);
-    if (game.lastObstacle > minGap + rand(0, 35)) {
+    var gapDistance = Math.max(110, 190 - Math.min(55, game.score * 0.06));
+    var minGap = Math.max(18, gapDistance / game.speed);
+    if (game.lastObstacle > minGap + rand(0, minGap * 0.3)) {
         spawnObstacle();
         game.lastObstacle = 0;
     }
@@ -939,7 +1004,7 @@ function updateObstacles() {
 
 function updateCoins() {
     game.lastCoin++;
-    var coinInterval = 55 + rand(0, 45);
+    var coinInterval = (250 + rand(0, 90)) / game.speed;
     if (game.lastCoin > coinInterval) {
         spawnCoinRow();
         game.lastCoin = 0;
@@ -966,9 +1031,54 @@ function updateCoins() {
     }
 }
 
+function getTimingTarget(wall) {
+    return {
+        x: wall.x + wall.w / 2,
+        y: Math.max(28, Math.min(GROUND_Y - 34, Math.round(GROUND_Y * 0.52)))
+    };
+}
+
+function activeTimingWall() {
+    for (var i = 0; i < walls.length; i++) {
+        if (!walls[i].destroyed && walls[i].windowStart >= 0) return walls[i];
+    }
+    return null;
+}
+
+function getTargetOuterRadius(wall) {
+    var progress = Math.max(0, Math.min(1, wall.windowStart / wall.windowDuration));
+    return targetHitRadius + (38 - targetHitRadius) * (1 - progress);
+}
+
+function attemptWallHit(wall) {
+    if (!wall || wall.destroyed || wall.windowStart < 0) return false;
+    var progress = wall.windowStart / wall.windowDuration;
+    if (progress < 0.72 || progress > 0.98) {
+        game.screenShake = 11;
+        gameOver();
+        return false;
+    }
+
+    wall.destroyed = true;
+    wall.flashTimer = 0;
+    game.score += 25;
+    game.sessionCoins += 5;
+    game.flashAlpha = 0.6;
+    game.screenShake = 5;
+    if (!game.attractMode) {
+        ui.prompt.textContent = progress >= 0.88 ? 'PERFECT!' : 'GREAT!';
+        ui.prompt.classList.add('hit-good');
+        ui.prompt.classList.remove('hidden');
+        hitFeedbackTimer = 45;
+    }
+    spawnParticles(wall.x + wall.w / 2, GROUND_Y / 2, biome().particles, 32);
+    spawnParticles(wall.x + wall.w / 2, GROUND_Y / 3, biome().wallColor, 22);
+    return true;
+}
+
 function updateWalls() {
     game.lastWall++;
-    var wallInterval = Math.max(220, 380 - game.speed * 10);
+    var wallInterval = Math.max(360, 600 - Math.min(180, game.score * 0.16)) / game.speed;
     if (game.lastWall > wallInterval && !game.wallActive && Math.floor(game.score) > 30) {
         spawnWall();
         game.lastWall = 0;
@@ -989,23 +1099,22 @@ function updateWalls() {
 
         var dist = wall.x - player.x;
 
-        if (dist < 50 && dist > -5 && wall.windowStart < 0) {
+        var approachDuration = Math.max(26, Math.min(55, Math.round(100 / game.speed)));
+        if (dist > 0 && dist <= game.speed * approachDuration + 8 && wall.windowStart < 0) {
             wall.windowStart = 0;
-            ui.prompt.classList.remove('hidden');
+            wall.windowDuration = approachDuration;
+            if (!game.attractMode) {
+                ui.prompt.textContent = 'TOCCA IL BERSAGLIO A TEMPO';
+                ui.prompt.classList.remove('hit-good');
+                ui.prompt.classList.remove('hidden');
+            }
         }
 
         if (wall.windowStart >= 0) {
             wall.windowStart++;
-            if (wall.windowStart > wall.windowDuration) {
-                wall.missed = true;
+            if (game.attractMode && wall.windowStart / wall.windowDuration >= 0.92) {
+                attemptWallHit(wall);
             }
-        }
-
-        if (wall.missed) {
-            ui.prompt.classList.add('hidden');
-            game.screenShake = 11;
-            gameOver();
-            return;
         }
 
         if (wall.x + wall.w < player.x) {
@@ -1018,22 +1127,10 @@ function updateWalls() {
         var ph = player.crouching ? 6 : PH;
         var py = player.crouching ? GROUND_Y - 6 : player.y;
         if (!wall.destroyed && aabb(player.x + 2, py, player.w - 4, ph, wall.x, 0, wall.w, GROUND_Y)) {
-            if (wall.windowStart >= 0 && wall.windowStart <= wall.windowDuration && keys['KeyE']) {
-                wall.destroyed = true;
-                wall.flashTimer = 0;
-                game.score += 25;
-                game.sessionCoins += 5;
-                game.flashAlpha = 0.6;
-                game.screenShake = 5;
-                ui.prompt.classList.add('hidden');
-                spawnParticles(wall.x + wall.w / 2, GROUND_Y / 2, biome().particles, 32);
-                spawnParticles(wall.x + wall.w / 2, GROUND_Y / 3, biome().wallColor, 22);
-            } else {
-                ui.prompt.classList.add('hidden');
-                game.screenShake = 11;
-                gameOver();
-                return;
-            }
+            ui.prompt.classList.add('hidden');
+            game.screenShake = 11;
+            gameOver();
+            return;
         }
     }
 }
@@ -1084,8 +1181,6 @@ function updateBiome() {
         game.prevBiomeIndex = game.biomeIndex;
         game.biomeIndex = newBiome;
         game.biomeTransition = 0;
-        game.baseSpeed += 0.18;
-        game.speed = game.baseSpeed;
         ui.biome.textContent = BIOMES[game.biomeIndex].name;
         for (var i = 0; i < atmParticles.length; i++) {
             atmParticles[i] = makeAtmParticle(true);
@@ -1101,6 +1196,7 @@ function updateBiome() {
 function update() {
     game.frameCount++;
     game.score += game.speed * 0.05;
+    game.speed = Math.min(6, game.baseSpeed + game.score * 0.006);
 
     updateBiome();
     updatePlayer();
@@ -1115,6 +1211,13 @@ function update() {
 
     if (game.screenShake > 0) game.screenShake -= 0.5;
     if (game.flashAlpha > 0)  game.flashAlpha  -= 0.03;
+    if (hitFeedbackTimer > 0) {
+        hitFeedbackTimer--;
+        if (hitFeedbackTimer === 0 && !activeTimingWall()) {
+            ui.prompt.classList.add('hidden');
+            ui.prompt.classList.remove('hit-good');
+        }
+    }
 
     ui.score.textContent    = Math.floor(game.score);
     ui.coinCount.textContent = 'x' + game.sessionCoins;
@@ -1387,23 +1490,43 @@ function drawWalls() {
             ctx.fillRect(Math.floor(wall.x + 4), cy + 6, 2, 1);
         }
 
-        if (wall.windowStart >= 0 && wall.windowStart <= wall.windowDuration) {
-            var pulse = Math.sin(game.frameCount * 0.35) * 0.3 + 0.7;
-            ctx.fillStyle = rgba([255, 255, 100], pulse * 0.45);
+        if (wall.windowStart >= 0) {
+            var pulse = Math.sin(game.frameCount * 0.35) * 0.2 + 0.8;
+            ctx.fillStyle = rgba([255, 255, 100], pulse * 0.22);
             ctx.fillRect(Math.floor(wall.x - 1), 0, wall.w + 2, GROUND_Y);
-
-            var progress = wall.windowStart / wall.windowDuration;
-            var barW = wall.w;
-            var barH = 3;
-            var barY = GROUND_Y - 5;
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
-            ctx.fillRect(Math.floor(wall.x), barY, barW, barH);
-            var r = Math.floor(255 * progress);
-            var g = Math.floor(255 * (1 - progress));
-            ctx.fillStyle = 'rgb(' + r + ',' + g + ',0)';
-            ctx.fillRect(Math.floor(wall.x), barY, Math.floor(barW * (1 - progress)), barH);
         }
     }
+}
+
+function drawTimingTarget() {
+    var wall = activeTimingWall();
+    if (!wall) return;
+    var target = getTimingTarget(wall);
+    var outerRadius = getTargetOuterRadius(wall);
+    var accent = transitionedColor('accent');
+
+    ctx.save();
+    ctx.shadowColor = rgb(accent);
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(target.x, target.y, outerRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(target.x, target.y, targetHitRadius, 0, Math.PI * 2);
+    ctx.fillStyle = rgba(accent, 0.92);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 7px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('HIT', target.x, target.y + 0.5);
+    ctx.restore();
 }
 
 function drawParticles() {
@@ -1439,14 +1562,25 @@ function draw() {
     drawPlayer();
     drawParticles();
     drawEffects();
+    drawTimingTarget();
 
     ctx.restore();
 }
 
 var lastTime = 0;
 
+function ensureLoop() {
+    if (loopActive) return;
+    loopActive = true;
+    lastTime = performance.now();
+    requestAnimationFrame(loop);
+}
+
 function loop(time) {
-    if (!game.running) return;
+    if (!game.running) {
+        loopActive = false;
+        return;
+    }
 
     var dt = time - lastTime;
     lastTime = time;
@@ -1454,15 +1588,21 @@ function loop(time) {
     if (dt > 100) dt = 16;
 
     update();
-    if (!game.running) return;
+    if (!game.running) {
+        loopActive = false;
+        return;
+    }
     draw();
 
     requestAnimationFrame(loop);
 }
 
 window.addEventListener('keydown', function(e) {
-    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'KeyE') {
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown') {
         e.preventDefault();
+    }
+    if ((e.code === 'Space' || e.code === 'ArrowUp') && !e.repeat && game.running && !game.attractMode) {
+        player.jumpBuffer = 4;
     }
     keys[e.code] = true;
 });
@@ -1471,12 +1611,78 @@ window.addEventListener('keyup', function(e) {
     keys[e.code] = false;
 });
 
+function canvasPoint(e) {
+    var rect = canvas.getBoundingClientRect();
+    return {
+        x: (e.clientX - rect.left) * W / rect.width,
+        y: (e.clientY - rect.top) * H / rect.height
+    };
+}
+
+canvas.addEventListener('pointerdown', function(e) {
+    if (!game.running || game.attractMode || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    e.preventDefault();
+    var point = canvasPoint(e);
+    var wall = activeTimingWall();
+    if (wall) {
+        var target = getTimingTarget(wall);
+        var dx = point.x - target.x;
+        var dy = point.y - target.y;
+        if (dx * dx + dy * dy <= Math.pow(getTargetOuterRadius(wall) + 7, 2)) {
+            attemptWallHit(wall);
+            return;
+        }
+    }
+    pointerStart = { id: e.pointerId, x: e.clientX, y: e.clientY, swiped: false };
+    player.jumpBuffer = 4;
+    keys.Space = true;
+    if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+});
+
+canvas.addEventListener('pointermove', function(e) {
+    if (!pointerStart || pointerStart.id !== e.pointerId || pointerStart.swiped) return;
+    if (e.clientY - pointerStart.y > 24) {
+        pointerStart.swiped = true;
+        keys.Space = false;
+        keys.ArrowDown = true;
+        if (!player.grounded) player.vy = Math.max(player.vy, 2);
+    }
+});
+
+function endPointer(e) {
+    if (pointerStart && pointerStart.id === e.pointerId) {
+        keys.Space = false;
+        if (pointerStart.swiped) keys.ArrowDown = false;
+        pointerStart = null;
+    }
+    if (duckPointerId === e.pointerId) {
+        keys.ArrowDown = false;
+        duckPointerId = null;
+    }
+}
+
+var duckPointerId = null;
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+window.addEventListener('blur', function() {
+    keys = {};
+    pointerStart = null;
+    duckPointerId = null;
+});
+
+ui.duck.addEventListener('pointerdown', function(e) {
+    if (!game.running || game.attractMode) return;
+    e.preventDefault();
+    e.stopPropagation();
+    duckPointerId = e.pointerId;
+    keys.ArrowDown = true;
+    if (ui.duck.setPointerCapture) ui.duck.setPointerCapture(e.pointerId);
+});
+
 document.getElementById('start-btn').onclick = function() {
-    lastTime = performance.now();
     startGame();
 };
 document.getElementById('restart-btn').onclick = function() {
-    lastTime = performance.now();
     startGame();
 };
 document.getElementById('menu-btn').onclick = showMenu;
@@ -1496,6 +1702,7 @@ document.getElementById('chest-close-btn').onclick = function() {
     showShop(ui.shop._fromGameOver);
 };
 
+scaleCanvas();
 showMenu();
 
 })();
