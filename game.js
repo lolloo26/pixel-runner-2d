@@ -422,6 +422,7 @@ var game = {
     biomeIndex: 0,
     biomeTransition: 0,
     biomeTransitionTimer: 0,
+    biomeTransitionId: 0,
     prevBiomeIndex: -1,
     frameCount: 0,
     lastObstacle: 0,
@@ -833,6 +834,7 @@ function initializeRun(attractMode) {
     game.prevBiomeIndex = -1;
     game.biomeTransition = 1;
     game.biomeTransitionTimer = 0;
+    game.biomeTransitionId = 0;
     game.frameCount = 0;
     game.lastObstacle = 0;
     game.lastCoin = 0;
@@ -1251,13 +1253,7 @@ function updateObstacles() {
         }
     }
 
-    if (wallSafetyActive) {
-        var clearUntil = upcomingWall.x + upcomingWall.w + game.speed * 30;
-        obstacles = obstacles.filter(function(o) {
-            return o.x + o.w < player.x - 4 || o.x > clearUntil;
-        });
-        game.lastObstacle = 0;
-    }
+    if (wallSafetyActive) game.lastObstacle = 0;
 
     for (var i = obstacles.length - 1; i >= 0; i--) {
         var o = obstacles[i];
@@ -1271,6 +1267,7 @@ function updateObstacles() {
         if (game.biomeTransitionTimer > 0) {
             continue;
         }
+        if (o.transitionGhost) continue;
 
         var ph = player.crouching ? 6 : PH;
         var py = player.crouching ? GROUND_Y - 6 : player.y;
@@ -1339,8 +1336,15 @@ function beginBiomeTransition() {
     };
 
     game.biomeTransitionTimer = BIOME_TRANSITION_DURATION;
+    game.biomeTransitionId++;
     game.lastObstacle = 0;
     game.lastWall = 0;
+    for (var i = 0; i < obstacles.length; i++) {
+        if (!obstacles[i].transitionGhost) {
+            obstacles[i].transitionGhost = true;
+            obstacles[i].transitionId = game.biomeTransitionId;
+        }
+    }
     ui.prompt.classList.add('hidden');
     ui.target.classList.add('hidden');
     ui.biomeTitle.textContent = transition.name;
@@ -1367,7 +1371,6 @@ function updateBiomeTransition(dt) {
     game.biomeTransitionTimer = Math.max(0, game.biomeTransitionTimer - dt);
     if (game.biomeTransitionTimer > 0) return;
 
-    obstacles = [];
     walls = [];
     game.wallActive = false;
     ui.biomeTransition.classList.add('hidden');
@@ -1848,7 +1851,10 @@ function drawObstacle(o) {
 
 function drawObstacles() {
     for (var i = 0; i < obstacles.length; i++) {
-        drawObstacle(obstacles[i]);
+        if (!obstacles[i].transitionGhost ||
+            (game.biomeTransitionTimer > 0 && obstacles[i].transitionId === game.biomeTransitionId)) {
+            drawObstacle(obstacles[i]);
+        }
     }
 }
 
