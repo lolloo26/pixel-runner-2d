@@ -2074,11 +2074,14 @@ ui.duck.addEventListener('pointerdown', function(e) {
     if (ui.duck.setPointerCapture) ui.duck.setPointerCapture(e.pointerId);
 });
 
-ui.mobileSettingsButton.addEventListener('click', function(e) {
+function handleMobileSettingsButton(e) {
     e.preventDefault();
     e.stopPropagation();
-    openMobileSettings();
-});
+    if (ui.mobileSettings.classList.contains('hidden')) openMobileSettings();
+}
+
+ui.mobileSettingsButton.addEventListener('pointerdown', handleMobileSettingsButton);
+ui.mobileSettingsButton.addEventListener('click', handleMobileSettingsButton);
 
 document.addEventListener('pointerdown', function firstMobileTouch() {
     if (isMobileTouch()) requestMobilePresentation();

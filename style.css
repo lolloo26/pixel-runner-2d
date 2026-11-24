@@ -53,6 +53,7 @@ html, body {
     height: 100vh;
     height: 100dvh;
     height: var(--viewport-height, 100dvh);
+    overflow: hidden;
     pointer-events: none;
 }
 
@@ -920,7 +921,7 @@ button:focus-visible {
     position: absolute;
     right: max(16px, env(safe-area-inset-right));
     bottom: max(16px, env(safe-area-inset-bottom));
-    z-index: 5;
+    z-index: 32;
     pointer-events: auto;
     width: var(--touch-size, 60px);
     height: var(--touch-size, 60px);
@@ -984,7 +985,7 @@ body.mobile-portrait #orientation-prompt {
     position: absolute;
     top: max(12px, env(safe-area-inset-top));
     right: max(12px, env(safe-area-inset-right));
-    z-index: 20;
+    z-index: 32;
     width: 46px;
     height: 46px;
     min-height: 46px;
