@@ -371,6 +371,8 @@ var ui = {
     mobileSettings: document.getElementById('mobile-settings-menu'),
     mobileSettingsButton: document.getElementById('mobile-settings-button'),
     audioToggle:  document.getElementById('mobile-audio-toggle'),
+    musicVolume:  document.getElementById('music-volume'),
+    sfxVolume:    document.getElementById('sfx-volume'),
     touchSize:    document.getElementById('touch-size'),
     touchOpacity: document.getElementById('touch-opacity'),
     commands:     document.getElementById('commands-menu'),
@@ -464,11 +466,16 @@ var music = (function() {
         return track;
     });
     var context = null;
+    var compressor = null;
+    var sfxBus = null;
     var unlocked = false;
     var enabled = save.audioEnabled;
     var paused = false;
     var currentIndex = -1;
-    var volume = 0.75;
+    var storedMusicVolume = parseFloat(localStorage.getItem('pr_music_volume'));
+    var storedSfxVolume = parseFloat(localStorage.getItem('pr_sfx_volume'));
+    var volume = isFinite(storedMusicVolume) ? Math.max(0, Math.min(1, storedMusicVolume)) : 0.75;
+    var sfxVolume = isFinite(storedSfxVolume) ? Math.max(0, Math.min(1, storedSfxVolume)) : 0.4;
     var crossfadeDuration = 1.8;
 
     function showAudioError(message) {
@@ -496,16 +503,99 @@ var music = (function() {
 
         try {
             context = new AudioContextType();
+            compressor = context.createDynamicsCompressor();
+            compressor.threshold.value = -4;
+            compressor.knee.value = 8;
+            compressor.ratio.value = 8;
+            compressor.attack.value = 0.003;
+            compressor.release.value = 0.18;
+            compressor.connect(context.destination);
+            sfxBus = context.createGain();
+            sfxBus.gain.value = enabled ? sfxVolume : 0;
+            sfxBus.connect(compressor);
             for (var i = 0; i < tracks.length; i++) {
                 tracks[i].source = context.createMediaElementSource(tracks[i].audio);
                 tracks[i].gain = context.createGain();
                 tracks[i].gain.gain.value = 0;
                 tracks[i].source.connect(tracks[i].gain);
-                tracks[i].gain.connect(context.destination);
+                tracks[i].gain.connect(compressor);
             }
         } catch (error) {
             context = null;
+            compressor = null;
+            sfxBus = null;
             showAudioError('Il sistema audio del browser non è disponibile');
+        }
+    }
+
+    function rampSfxBus(target, duration) {
+        if (!sfxBus || !context || context.state === 'closed') return;
+        var now = context.currentTime;
+        var gain = sfxBus.gain;
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(gain.value, now);
+        gain.linearRampToValueAtTime(target, now + duration);
+    }
+
+    function playTone(frequency, endFrequency, start, duration, type, peak) {
+        var oscillator = context.createOscillator();
+        var envelope = context.createGain();
+        oscillator.type = type;
+        oscillator.frequency.setValueAtTime(frequency, start);
+        oscillator.frequency.exponentialRampToValueAtTime(endFrequency, start + duration);
+        envelope.gain.setValueAtTime(0.0001, start);
+        envelope.gain.exponentialRampToValueAtTime(peak, start + 0.008);
+        envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+        oscillator.connect(envelope);
+        envelope.connect(sfxBus);
+        oscillator.start(start);
+        oscillator.stop(start + duration + 0.01);
+    }
+
+    function playNoise(start, duration, peak, filterType, filterFrequency) {
+        var frameCount = Math.max(1, Math.floor(context.sampleRate * duration));
+        var buffer = context.createBuffer(1, frameCount, context.sampleRate);
+        var data = buffer.getChannelData(0);
+        for (var i = 0; i < frameCount; i++) {
+            data[i] = (Math.random() * 2 - 1) * (1 - i / frameCount);
+        }
+        var source = context.createBufferSource();
+        var filter = context.createBiquadFilter();
+        var envelope = context.createGain();
+        source.buffer = buffer;
+        filter.type = filterType;
+        filter.frequency.setValueAtTime(filterFrequency, start);
+        envelope.gain.setValueAtTime(0.0001, start);
+        envelope.gain.exponentialRampToValueAtTime(peak, start + 0.003);
+        envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+        source.connect(filter);
+        filter.connect(envelope);
+        envelope.connect(sfxBus);
+        source.start(start);
+        source.stop(start + duration + 0.01);
+    }
+
+    function playSfx(type, perfect) {
+        if (!enabled || sfxVolume <= 0 || !unlocked || !context || !sfxBus || context.state === 'closed') return;
+        var now = context.currentTime;
+        if (type === 'jump') {
+            playTone(330, 570, now, 0.12, 'sine', 0.13);
+        } else if (type === 'coin') {
+            playTone(880, 1080, now, 0.12, 'sine', 0.12);
+            playTone(1320, 1600, now + 0.065, 0.14, 'sine', 0.105);
+        } else if (type === 'wall') {
+            playTone(150, 48, now, 0.17, 'sine', 0.24);
+            playTone(260, 100, now, 0.12, 'triangle', 0.12);
+            playNoise(now, 0.045, 0.13, 'bandpass', 1250);
+            playNoise(now + 0.025, 0.16, 0.075, 'highpass', 2200);
+            playTone(900, 1320, now + 0.035, 0.15, 'sine', 0.045);
+            playTone(1480, 1850, now + 0.075, 0.13, 'sine', 0.035);
+            if (perfect) {
+                playTone(1240, 1560, now + 0.025, 0.2, 'sine', 0.09);
+                playTone(1860, 2200, now + 0.09, 0.18, 'sine', 0.065);
+            }
+        } else if (type === 'ui') {
+            playTone(520, 360, now, 0.055, 'sine', 0.075);
         }
     }
 
@@ -655,6 +745,7 @@ var music = (function() {
 
     function setEnabled(value) {
         enabled = value;
+        rampSfxBus(enabled ? sfxVolume : 0, 0.025);
         if (!enabled) {
             for (var i = 0; i < tracks.length; i++) {
                 if (tracks[i].active) stopTrack(i, true);
@@ -690,12 +781,31 @@ var music = (function() {
         }
     }
 
+    function setMusicVolume(value) {
+        volume = Math.max(0, Math.min(1, value));
+        localStorage.setItem('pr_music_volume', volume);
+        if (enabled && !paused && currentIndex >= 0 && tracks[currentIndex].active) {
+            setTrackLevel(tracks[currentIndex], volume, 0.08);
+        }
+    }
+
+    function setSfxVolume(value) {
+        sfxVolume = Math.max(0, Math.min(1, value));
+        localStorage.setItem('pr_sfx_volume', sfxVolume);
+        rampSfxBus(enabled ? sfxVolume : 0, 0.05);
+    }
+
     return {
         unlock: unlock,
         setBiome: setBiome,
         setEnabled: setEnabled,
         setPaused: setPaused,
-        fadeOut: fadeOut
+        fadeOut: fadeOut,
+        playSfx: playSfx,
+        setMusicVolume: setMusicVolume,
+        setSfxVolume: setSfxVolume,
+        getMusicVolume: function() { return volume; },
+        getSfxVolume: function() { return sfxVolume; }
     };
 })();
 
@@ -1484,6 +1594,7 @@ function updatePlayer() {
             player.grounded = false;
             player.jumpHeld = true;
             player.jumpTimer = 0;
+            music.playSfx('jump');
         } else if (player.jumpHeld && player.jumpTimer < JUMP_HOLD_MAX) {
             player.vy += JUMP_HOLD;
             player.jumpTimer++;
@@ -1595,6 +1706,7 @@ function updateCoins() {
         var py = player.crouching ? GROUND_Y - 6 : player.y;
         if (aabb(player.x, py, player.w, ph, c.x, c.y, c.w, c.h)) {
             game.sessionCoins++;
+            music.playSfx('coin');
             spawnCoinParticles(c.x + 4, c.y + 4);
             coins.splice(i, 1);
         }
@@ -1747,6 +1859,7 @@ function positionWallTarget(wall) {
 function attemptWallHit(wall) {
     if (!wall || wall.destroyed || wall.windowStart < 0) return false;
     var progress = wall.windowStart / wall.windowDuration;
+    music.playSfx('wall', progress >= 0.92);
     wall.destroyed = true;
     wall.flashTimer = 0;
     ui.target.classList.add('hidden');
@@ -2458,12 +2571,27 @@ document.addEventListener('pointerdown', function firstMobileTouch() {
 document.addEventListener('pointerdown', unlockMusic, { capture: true });
 document.addEventListener('click', unlockMusic, { capture: true });
 document.addEventListener('keydown', unlockMusic);
+document.addEventListener('click', function(e) {
+    if (!e.target || typeof e.target.closest !== 'function') return;
+    var control = e.target.closest('button, [role="button"], .skin-item');
+    if (!control || control.disabled || control.id === 'wall-hit-target') return;
+    if (control.classList.contains('locked') || control.classList.contains('equipped')) return;
+    music.playSfx('ui');
+}, { capture: true });
 ui.audioToggle.onclick = toggleAudio;
 ui.musicToggle.onclick = toggleAudio;
+ui.musicVolume.value = String(Math.round(music.getMusicVolume() * 100));
+ui.sfxVolume.value = String(Math.round(music.getSfxVolume() * 100));
 ui.touchSize.value = localStorage.getItem('pr_touch_size') || '60';
 ui.touchOpacity.value = localStorage.getItem('pr_touch_opacity') || '70';
 updateTouchButtonPreferences();
 updateAudioControls();
+ui.musicVolume.addEventListener('input', function() {
+    music.setMusicVolume(parseInt(ui.musicVolume.value, 10) / 100);
+});
+ui.sfxVolume.addEventListener('input', function() {
+    music.setSfxVolume(parseInt(ui.sfxVolume.value, 10) / 100);
+});
 ui.touchSize.addEventListener('input', updateTouchButtonPreferences);
 ui.touchOpacity.addEventListener('input', updateTouchButtonPreferences);
 document.getElementById('mobile-settings-controls-btn').onclick = openCommands;
