@@ -57,6 +57,7 @@ window.addEventListener('resize', scaleCanvas);
 var BIOMES = [
     {
         name: 'GIUNGLA',
+        theme: 'jungle',
         sky: [4, 28, 8],
         ground: [14, 90, 18],
         groundAlt: [22, 115, 28],
@@ -81,6 +82,7 @@ var BIOMES = [
     },
     {
         name: 'VULCANO',
+        theme: 'volcano',
         sky: [32, 5, 5],
         ground: [90, 22, 10],
         groundAlt: [115, 35, 18],
@@ -105,6 +107,7 @@ var BIOMES = [
     },
     {
         name: 'GHIACCIAIO',
+        theme: 'glacier',
         sky: [5, 20, 38],
         ground: [22, 88, 110],
         groundAlt: [34, 110, 135],
@@ -129,6 +132,7 @@ var BIOMES = [
     },
     {
         name: 'DESERTO NEON',
+        theme: 'neon',
         sky: [24, 5, 32],
         ground: [82, 28, 105],
         groundAlt: [105, 40, 130],
@@ -271,6 +275,10 @@ var ui = {
     over:         document.getElementById('game-over'),
     shop:         document.getElementById('shop-menu'),
     chestOverlay: document.getElementById('chest-overlay'),
+    overlay:      document.getElementById('ui-overlay'),
+    biomeTransition: document.getElementById('biome-transition'),
+    biomeTitle:   document.getElementById('biome-title'),
+    biomeParticles: document.getElementById('biome-particles'),
     score:        document.getElementById('current-score'),
     target:       document.getElementById('wall-hit-target'),
     coinCount:    document.getElementById('coin-count'),
@@ -311,6 +319,7 @@ var game = {
     baseSpeed: 1.2,
     biomeIndex: 0,
     biomeTransition: 0,
+    biomeTransitionTimer: 0,
     prevBiomeIndex: -1,
     frameCount: 0,
     lastObstacle: 0,
@@ -673,6 +682,7 @@ function initializeRun(attractMode) {
     game.biomeIndex = 0;
     game.prevBiomeIndex = -1;
     game.biomeTransition = 1;
+    game.biomeTransitionTimer = 0;
     game.frameCount = 0;
     game.lastObstacle = 0;
     game.lastCoin = 0;
@@ -703,6 +713,7 @@ function initializeRun(attractMode) {
     ui.newRecord.classList.add('hidden');
     ui.biome.textContent = BIOMES[0].name;
     displayedScore = -1;
+    beginBiomeTransition();
 
     ensureLoop();
 }
@@ -738,6 +749,10 @@ function gameOver() {
     ui.prompt.classList.add('hidden');
     ui.prompt.classList.remove('hit-good');
     ui.target.classList.add('hidden');
+    ui.biomeTransition.classList.add('hidden');
+    ui.biomeParticles.innerHTML = '';
+    ui.overlay.classList.remove('theme-jungle', 'theme-volcano', 'theme-glacier', 'theme-neon');
+    game.biomeTransitionTimer = 0;
     hitFeedbackTimer = 0;
     ui.over.classList.remove('hidden');
     ui.finalScore.textContent = 'PUNTI: ' + score;
@@ -980,12 +995,14 @@ function updatePlayer() {
 }
 
 function updateObstacles() {
-    game.lastObstacle++;
-    var gapDistance = Math.max(110, 190 - Math.min(55, game.score * 0.06));
-    var minGap = Math.max(18, gapDistance / game.speed);
-    if (game.lastObstacle > minGap + rand(0, minGap * 0.3)) {
-        spawnObstacle();
-        game.lastObstacle = 0;
+    if (game.biomeTransitionTimer <= 0) {
+        game.lastObstacle++;
+        var gapDistance = Math.max(110, 190 - Math.min(55, game.score * 0.06));
+        var minGap = Math.max(18, gapDistance / game.speed);
+        if (game.lastObstacle > minGap + rand(0, minGap * 0.3)) {
+            spawnObstacle();
+            game.lastObstacle = 0;
+        }
     }
 
     for (var i = obstacles.length - 1; i >= 0; i--) {
@@ -994,6 +1011,10 @@ function updateObstacles() {
         if (o.flying) o.wingTimer++;
         if (o.x + o.w < 0) {
             obstacles.splice(i, 1);
+            continue;
+        }
+
+        if (game.biomeTransitionTimer > 0) {
             continue;
         }
 
@@ -1036,6 +1057,54 @@ function updateCoins() {
     }
 }
 
+var BIOME_TRANSITION_DURATION = 2400;
+
+function beginBiomeTransition() {
+    var transition = biome();
+    var colors = {
+        jungle: '#58ff91',
+        volcano: '#ff8b38',
+        glacier: '#c6f5ff',
+        neon: '#ffe06b'
+    };
+
+    game.biomeTransitionTimer = BIOME_TRANSITION_DURATION;
+    game.lastObstacle = 0;
+    game.lastWall = 0;
+    ui.prompt.classList.add('hidden');
+    ui.target.classList.add('hidden');
+    ui.biomeTitle.textContent = transition.name;
+    ui.biomeParticles.innerHTML = '';
+    ui.overlay.classList.remove('theme-jungle', 'theme-volcano', 'theme-glacier', 'theme-neon');
+    ui.overlay.classList.add('theme-' + transition.theme);
+    ui.biomeTransition.classList.remove('hidden');
+
+    for (var i = 0; i < 28; i++) {
+        var particle = document.createElement('span');
+        particle.className = 'biome-particle';
+        particle.style.setProperty('--particle-x', rand(0, 100).toFixed(2) + '%');
+        particle.style.setProperty('--particle-y', (transition.theme === 'volcano' ? rand(70, 105) : rand(-8, 108)).toFixed(2) + '%');
+        particle.style.setProperty('--particle-size', rand(3, 10).toFixed(1) + 'px');
+        particle.style.setProperty('--particle-delay', rand(-0.2, 0.45).toFixed(2) + 's');
+        particle.style.setProperty('--particle-drift', rand(-85, 85).toFixed(1) + 'px');
+        particle.style.setProperty('--particle-color', colors[transition.theme]);
+        ui.biomeParticles.appendChild(particle);
+    }
+}
+
+function updateBiomeTransition(dt) {
+    if (game.biomeTransitionTimer <= 0) return;
+    game.biomeTransitionTimer = Math.max(0, game.biomeTransitionTimer - dt);
+    if (game.biomeTransitionTimer > 0) return;
+
+    obstacles = [];
+    walls = [];
+    game.wallActive = false;
+    ui.biomeTransition.classList.add('hidden');
+    ui.overlay.classList.remove('theme-jungle', 'theme-volcano', 'theme-glacier', 'theme-neon');
+    ui.biomeParticles.innerHTML = '';
+}
+
 function activeTimingWall() {
     for (var i = 0; i < walls.length; i++) {
         if (!walls[i].destroyed && walls[i].windowStart >= 0) return walls[i];
@@ -1065,11 +1134,13 @@ function attemptWallHit(wall) {
 }
 
 function updateWalls() {
-    game.lastWall++;
-    var wallInterval = Math.max(360, 600 - Math.min(180, game.score * 0.16)) / game.speed;
-    if (game.lastWall > wallInterval && !game.wallActive && Math.floor(game.score) > 30) {
-        spawnWall();
-        game.lastWall = 0;
+    if (game.biomeTransitionTimer <= 0) {
+        game.lastWall++;
+        var wallInterval = Math.max(360, 600 - Math.min(180, game.score * 0.16)) / game.speed;
+        if (game.lastWall > wallInterval && !game.wallActive && Math.floor(game.score) > 30) {
+            spawnWall();
+            game.lastWall = 0;
+        }
     }
 
     for (var i = walls.length - 1; i >= 0; i--) {
@@ -1083,6 +1154,10 @@ function updateWalls() {
                 walls.splice(i, 1);
                 game.wallActive = false;
             }
+            continue;
+        }
+
+        if (game.biomeTransitionTimer > 0) {
             continue;
         }
 
@@ -1177,6 +1252,7 @@ function updateBiome() {
         game.biomeIndex = newBiome;
         game.biomeTransition = 0;
         ui.biome.textContent = BIOMES[game.biomeIndex].name;
+        beginBiomeTransition();
         for (var i = 0; i < atmParticles.length; i++) {
             atmParticles[i] = makeAtmParticle(true);
             atmParticles[i].type = biome().atmType;
@@ -1188,7 +1264,7 @@ function updateBiome() {
     }
 }
 
-function update() {
+function update(dt) {
     game.frameCount++;
     game.score += game.speed * 0.05;
     var targetSpeed = game.baseSpeed + (5.2 - game.baseSpeed) * (1 - Math.exp(-game.score / 1100));
@@ -1201,6 +1277,7 @@ function update() {
     if (!game.running) return;
     updateCoins();
     updateWalls();
+    updateBiomeTransition(dt);
     if (!game.running) return;
     updateParticles();
     updateAtmParticles();
@@ -1400,6 +1477,11 @@ function drawPlayer() {
 }
 
 function drawObstacle(o) {
+    ctx.save();
+    if (game.biomeTransitionTimer > 0) {
+        ctx.globalAlpha = game.biomeTransitionTimer / BIOME_TRANSITION_DURATION;
+    }
+
     var c  = o.color;
     var dk = o.dark;
     var hi = o.highlight;
@@ -1443,6 +1525,7 @@ function drawObstacle(o) {
         ctx.fillRect(Math.floor(o.x + 1), Math.floor(o.y + 3), 1, 1);
         ctx.fillRect(Math.floor(o.x + 3), Math.floor(o.y + 6), 1, 1);
     }
+    ctx.restore();
 }
 
 function drawObstacles() {
@@ -1473,6 +1556,11 @@ function drawWalls() {
         var wall = walls[i];
         if (wall.destroyed) continue;
 
+        ctx.save();
+        if (game.biomeTransitionTimer > 0) {
+            ctx.globalAlpha = game.biomeTransitionTimer / BIOME_TRANSITION_DURATION;
+        }
+
         var c  = wall.color;
         var dk = wall.dark;
 
@@ -1498,6 +1586,7 @@ function drawWalls() {
             ctx.fillStyle = rgba([255, 255, 100], pulse * 0.22);
             ctx.fillRect(Math.floor(wall.x - 1), 0, wall.w + 2, GROUND_Y);
         }
+        ctx.restore();
     }
 }
 
@@ -1558,7 +1647,7 @@ function loop(time) {
 
     if (dt > 100) dt = 16;
 
-    update();
+    update(dt);
     if (!game.running) {
         loopActive = false;
         return;
