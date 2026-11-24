@@ -51,6 +51,7 @@
                 <div id="biome-title"></div>
             </div>
 
+            <button id="mobile-settings-button" aria-label="Impostazioni" title="Impostazioni"><span aria-hidden="true">⚙</span></button>
             <button id="duck-control" aria-label="Abbassati e accelera la caduta"><span>↓</span><small>SCIVOLA</small></button>
 
             <div id="game-over" class="overlay-screen hidden">
@@ -71,6 +72,29 @@
                     <button id="pause-controls-btn">COMANDI</button>
                     <button id="pause-restart-btn">RIAVVIA</button>
                     <button id="pause-menu-btn">MENU PRINCIPALE</button>
+                </div>
+            </div>
+
+            <div id="mobile-settings-menu" class="overlay-screen hidden">
+                <div class="glass-panel mobile-settings-panel">
+                    <div class="menu-eyebrow">CONTROLLI TOUCH</div>
+                    <h2>IMPOSTAZIONI</h2>
+                    <button id="mobile-audio-toggle" class="settings-toggle" type="button">AUDIO: ON</button>
+                    <label class="touch-setting" for="touch-size">
+                        <span>Dimensione tasti</span>
+                        <input id="touch-size" type="range" min="48" max="84" step="4" value="60">
+                    </label>
+                    <label class="touch-setting" for="touch-opacity">
+                        <span>Opacità tasti</span>
+                        <input id="touch-opacity" type="range" min="35" max="100" step="5" value="70">
+                    </label>
+                    <div class="mobile-settings-actions">
+                        <button id="mobile-settings-controls-btn" type="button">COMANDI</button>
+                        <button id="mobile-settings-resume-btn" class="primary-button" type="button">RIPRENDI</button>
+                        <button id="mobile-settings-restart-btn" type="button">RIAVVIA</button>
+                        <button id="mobile-settings-menu-btn" type="button">MENU PRINCIPALE</button>
+                        <button id="mobile-settings-close-btn" type="button">CHIUDI</button>
+                    </div>
                 </div>
             </div>
 
@@ -113,6 +137,10 @@
                 <div id="chest-result" class="hidden"></div>
                 <button id="chest-close-btn" class="hidden">CONTINUA</button>
             </div>
+        </div>
+        <div id="orientation-prompt" aria-live="polite">
+            <div class="orientation-prompt-icon" aria-hidden="true">↻</div>
+            <h2>Ruota il telefono in orizzontale per giocare</h2>
         </div>
     </div>
     <script src="game.js"></script>

@@ -2,6 +2,7 @@
 
 var canvas = document.getElementById('game-canvas');
 var ctx = canvas.getContext('2d');
+var gameContainer = document.getElementById('game-container');
 var chestCanvas = document.getElementById('chest-canvas');
 var chestCtx = chestCanvas.getContext('2d');
 chestCanvas.width = 64;
@@ -23,20 +24,31 @@ var JUMP_HOLD_MAX = 14;
 
 var MAX_JUMP_HEIGHT = 42;
 
+function isMobileTouch() {
+    return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+}
+
+var mobilePresentationRequested = false;
+
 function scaleCanvas() {
-    var cw = window.innerWidth;
-    var ch = window.innerHeight;
+    var viewport = window.visualViewport;
+    var cw = viewport ? viewport.width : window.innerWidth;
+    var ch = viewport ? viewport.height : window.innerHeight;
     var previousWidth = W;
     var previousGround = GROUND_Y;
+    var baseHeight = isMobileTouch() && cw >= ch ? 150 : 180;
     if (cw / ch >= 16 / 9) {
-        H = 180;
-        W = Math.max(320, Math.round(H * cw / ch));
+        H = baseHeight;
+        W = Math.max(Math.round(H * 16 / 9), Math.round(H * cw / ch));
     } else {
-        W = 320;
-        H = Math.max(180, Math.round(W * ch / cw));
+        W = Math.round(baseHeight * 16 / 9);
+        H = Math.max(baseHeight, Math.round(W * ch / cw));
     }
     GROUND_Y = H - 22;
-    canvas.height = H;
+    var pixelRatio = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = Math.round(W * pixelRatio);
+    canvas.height = Math.round(H * pixelRatio);
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     ctx.imageSmoothingEnabled = false;
     var groundShift = GROUND_Y - previousGround;
     if (typeof player !== 'undefined' && (groundShift !== 0 || W !== previousWidth)) {
@@ -52,7 +64,50 @@ function scaleCanvas() {
     canvas.style.top = '0px';
 }
 
-window.addEventListener('resize', scaleCanvas);
+function canvasPoint(clientX, clientY) {
+    var rect = canvas.getBoundingClientRect();
+    return {
+        x: (clientX - rect.left) * W / Math.max(1, rect.width),
+        y: (clientY - rect.top) * H / Math.max(1, rect.height)
+    };
+}
+
+function requestMobilePresentation() {
+    if (!isMobileTouch() || mobilePresentationRequested) return;
+    mobilePresentationRequested = true;
+
+    var orientation = screen.orientation;
+    var lockLandscape = function() {
+        if (!orientation || typeof orientation.lock !== 'function') return;
+        var lockPromise;
+        try {
+            lockPromise = orientation.lock('landscape');
+        } catch (error) {
+            updateOrientationState();
+            return;
+        }
+        if (lockPromise && typeof lockPromise.catch === 'function') {
+            lockPromise.catch(updateOrientationState);
+        }
+    };
+    var fullscreenPromise;
+    try {
+        if (!document.fullscreenElement && gameContainer.requestFullscreen) {
+            fullscreenPromise = gameContainer.requestFullscreen({ navigationUI: 'hide' });
+        }
+    } catch (error) {
+        fullscreenPromise = null;
+    }
+
+    if (fullscreenPromise && typeof fullscreenPromise.then === 'function') {
+        fullscreenPromise.then(lockLandscape).catch(function() {
+            mobilePresentationRequested = false;
+            lockLandscape();
+        });
+    } else {
+        lockLandscape();
+    }
+}
 
 var BIOMES = [
     {
@@ -274,6 +329,11 @@ var ui = {
     game:         document.getElementById('game-ui'),
     over:         document.getElementById('game-over'),
     pause:        document.getElementById('pause-menu'),
+    mobileSettings: document.getElementById('mobile-settings-menu'),
+    mobileSettingsButton: document.getElementById('mobile-settings-button'),
+    audioToggle:  document.getElementById('mobile-audio-toggle'),
+    touchSize:    document.getElementById('touch-size'),
+    touchOpacity: document.getElementById('touch-opacity'),
     commands:     document.getElementById('commands-menu'),
     shop:         document.getElementById('shop-menu'),
     chestOverlay: document.getElementById('chest-overlay'),
@@ -302,7 +362,8 @@ var save = {
     coins:      parseInt(localStorage.getItem('pr_coins'))    || 0,
     highScore:  parseInt(localStorage.getItem('pr_highscore'))|| 0,
     skins:      JSON.parse(localStorage.getItem('pr_skins'))  || ['classic'],
-    activeSkin: localStorage.getItem('pr_active_skin')        || 'classic'
+    activeSkin: localStorage.getItem('pr_active_skin')        || 'classic',
+    audioEnabled: localStorage.getItem('pr_audio_enabled') !== 'false'
 };
 
 function persist() {
@@ -310,6 +371,7 @@ function persist() {
     localStorage.setItem('pr_highscore',  save.highScore);
     localStorage.setItem('pr_skins',      JSON.stringify(save.skins));
     localStorage.setItem('pr_active_skin',save.activeSkin);
+    localStorage.setItem('pr_audio_enabled', save.audioEnabled);
 }
 
 var game = {
@@ -334,6 +396,38 @@ var game = {
     autoJump: false,
     autoCrouch: false
 };
+
+function updateOrientationState() {
+    var viewport = window.visualViewport;
+    var width = viewport ? viewport.width : window.innerWidth;
+    var height = viewport ? viewport.height : window.innerHeight;
+    var portrait = isMobileTouch() && height > width;
+    var orientationChanged = portrait !== previousPortraitState;
+    previousPortraitState = portrait;
+    document.body.classList.toggle('mobile-portrait', portrait);
+
+    if (orientationChanged) {
+        keys = {};
+        pointerStart = null;
+        duckPointerId = null;
+    }
+
+    if (portrait && game.running && !game.paused) {
+        game.paused = true;
+        orientationPaused = true;
+        keys = {};
+        pointerStart = null;
+        duckPointerId = null;
+    } else if (!portrait && orientationPaused) {
+        orientationPaused = false;
+        game.paused = false;
+        ui.pause.classList.add('hidden');
+        lastTime = performance.now();
+    }
+
+    ui.duck.classList.toggle('active', isMobileTouch() && !portrait && game.running && !game.attractMode && !game.paused);
+    scaleCanvas();
+}
 
 var PW = 10;
 var PH = 10;
@@ -362,6 +456,8 @@ var atmParticles = [];
 var bgLayers = { far: [], mid: [], stars: [] };
 var loopActive = false;
 var pointerStart = null;
+var orientationPaused = false;
+var previousPortraitState = false;
 var hitFeedbackTimer = 0;
 var targetHitRadius = 17;
 var displayedScore = -1;
@@ -678,6 +774,7 @@ function resetPlayer() {
 function initializeRun(attractMode) {
     game.running = true;
     game.paused = false;
+    orientationPaused = false;
     game.attractMode = attractMode;
     game.score = 0;
     game.sessionCoins = 0;
@@ -708,11 +805,12 @@ function initializeRun(attractMode) {
 
     ui.over.classList.add('hidden');
     ui.pause.classList.add('hidden');
+    ui.mobileSettings.classList.add('hidden');
     ui.commands.classList.add('hidden');
     ui.shop.classList.add('hidden');
     ui.main.classList.toggle('hidden', !attractMode);
     ui.game.classList.toggle('hidden', attractMode);
-    ui.duck.classList.toggle('active', !attractMode && window.matchMedia('(pointer: coarse)').matches);
+    ui.duck.classList.toggle('active', !attractMode && isMobileTouch());
     ui.prompt.classList.add('hidden');
     ui.prompt.classList.remove('hit-good');
     ui.target.classList.add('hidden');
@@ -725,11 +823,14 @@ function initializeRun(attractMode) {
 }
 
 function startGame() {
+    requestMobilePresentation();
     initializeRun(false);
+    updateOrientationState();
 }
 
 function startAttract() {
     initializeRun(true);
+    updateOrientationState();
 }
 
 function gameOver() {
@@ -740,6 +841,7 @@ function gameOver() {
 
     game.running = false;
     game.paused = false;
+    orientationPaused = false;
 
     var score = Math.floor(game.score);
     save.coins += game.sessionCoins;
@@ -753,6 +855,7 @@ function gameOver() {
 
     ui.game.classList.add('hidden');
     ui.pause.classList.add('hidden');
+    ui.mobileSettings.classList.add('hidden');
     ui.commands.classList.add('hidden');
     ui.duck.classList.remove('active');
     ui.prompt.classList.add('hidden');
@@ -776,6 +879,7 @@ function gameOver() {
 function showMenu() {
     ui.over.classList.add('hidden');
     ui.pause.classList.add('hidden');
+    ui.mobileSettings.classList.add('hidden');
     ui.commands.classList.add('hidden');
     ui.shop.classList.add('hidden');
     ui.chestOverlay.classList.add('hidden');
@@ -793,6 +897,28 @@ function closeCommands() {
     ui.commands.classList.add('hidden');
 }
 
+function updateTouchButtonPreferences() {
+    var size = Number(ui.touchSize.value);
+    var opacity = Number(ui.touchOpacity.value) / 100;
+    document.documentElement.style.setProperty('--touch-size', size + 'px');
+    document.documentElement.style.setProperty('--touch-opacity', opacity.toFixed(2));
+    localStorage.setItem('pr_touch_size', size);
+    localStorage.setItem('pr_touch_opacity', Number(ui.touchOpacity.value));
+}
+
+function openMobileSettings() {
+    if (!isMobileTouch()) return;
+    requestMobilePresentation();
+    if (game.running && !game.attractMode && !game.paused) pauseGame();
+    ui.pause.classList.add('hidden');
+    ui.mobileSettings.classList.remove('hidden');
+}
+
+function closeMobileSettings() {
+    ui.mobileSettings.classList.add('hidden');
+    if (game.paused && !orientationPaused) resumeGame();
+}
+
 function pauseGame() {
     if (!game.running || game.attractMode || game.paused) return;
     game.paused = true;
@@ -805,19 +931,26 @@ function pauseGame() {
 
 function resumeGame() {
     if (!game.paused) return;
+    if (orientationPaused) return;
     game.paused = false;
     keys = {};
     pointerStart = null;
     duckPointerId = null;
     ui.pause.classList.add('hidden');
+    ui.mobileSettings.classList.add('hidden');
     ui.commands.classList.add('hidden');
-    ui.duck.classList.toggle('active', window.matchMedia('(pointer: coarse)').matches);
+    ui.duck.classList.toggle('active', isMobileTouch());
     lastTime = performance.now();
 }
 
 function handleEscape() {
     if (!ui.commands.classList.contains('hidden')) {
         closeCommands();
+        return;
+    }
+    if (!ui.mobileSettings.classList.contains('hidden')) {
+        ui.mobileSettings.classList.add('hidden');
+        if (game.paused && !orientationPaused) resumeGame();
         return;
     }
     if (game.paused) {
@@ -1795,9 +1928,18 @@ window.addEventListener('keyup', function(e) {
 canvas.addEventListener('pointerdown', function(e) {
     if (!game.running || game.attractMode || (e.pointerType === 'mouse' && e.button !== 0)) return;
     e.preventDefault();
+    requestMobilePresentation();
     var wall = activeTimingWall();
     if (wall) return;
-    pointerStart = { id: e.pointerId, x: e.clientX, y: e.clientY, swiped: false };
+    var point = canvasPoint(e.clientX, e.clientY);
+    var rect = canvas.getBoundingClientRect();
+    pointerStart = {
+        id: e.pointerId,
+        x: point.x,
+        y: point.y,
+        swipeThreshold: 24 * H / Math.max(1, rect.height),
+        swiped: false
+    };
     player.jumpBuffer = 4;
     keys.Space = true;
     if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
@@ -1805,7 +1947,8 @@ canvas.addEventListener('pointerdown', function(e) {
 
 canvas.addEventListener('pointermove', function(e) {
     if (!pointerStart || pointerStart.id !== e.pointerId || pointerStart.swiped) return;
-    if (e.clientY - pointerStart.y > 24) {
+    var point = canvasPoint(e.clientX, e.clientY);
+    if (point.y - pointerStart.y > pointerStart.swipeThreshold) {
         pointerStart.swiped = true;
         keys.Space = false;
         keys.ArrowDown = true;
@@ -1833,15 +1976,60 @@ window.addEventListener('blur', function() {
     pointerStart = null;
     duckPointerId = null;
 });
+window.addEventListener('resize', updateOrientationState);
+window.addEventListener('orientationchange', function() {
+    updateOrientationState();
+    window.setTimeout(updateOrientationState, 120);
+});
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', updateOrientationState);
+}
+if (screen.orientation && screen.orientation.addEventListener) {
+    screen.orientation.addEventListener('change', updateOrientationState);
+}
+document.addEventListener('fullscreenchange', function() {
+    if (!document.fullscreenElement) mobilePresentationRequested = false;
+    updateOrientationState();
+});
 
 ui.duck.addEventListener('pointerdown', function(e) {
     if (!game.running || game.attractMode) return;
     e.preventDefault();
     e.stopPropagation();
+    requestMobilePresentation();
     duckPointerId = e.pointerId;
     keys.ArrowDown = true;
     if (ui.duck.setPointerCapture) ui.duck.setPointerCapture(e.pointerId);
 });
+
+ui.mobileSettingsButton.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    openMobileSettings();
+});
+
+document.addEventListener('pointerdown', function firstMobileTouch() {
+    if (isMobileTouch()) requestMobilePresentation();
+}, { once: true });
+
+ui.audioToggle.onclick = function() {
+    save.audioEnabled = !save.audioEnabled;
+    ui.audioToggle.textContent = 'AUDIO: ' + (save.audioEnabled ? 'ON' : 'OFF');
+    ui.audioToggle.setAttribute('aria-pressed', save.audioEnabled ? 'true' : 'false');
+    persist();
+};
+ui.touchSize.value = localStorage.getItem('pr_touch_size') || '60';
+ui.touchOpacity.value = localStorage.getItem('pr_touch_opacity') || '70';
+updateTouchButtonPreferences();
+ui.audioToggle.textContent = 'AUDIO: ' + (save.audioEnabled ? 'ON' : 'OFF');
+ui.audioToggle.setAttribute('aria-pressed', save.audioEnabled ? 'true' : 'false');
+ui.touchSize.addEventListener('input', updateTouchButtonPreferences);
+ui.touchOpacity.addEventListener('input', updateTouchButtonPreferences);
+document.getElementById('mobile-settings-controls-btn').onclick = openCommands;
+document.getElementById('mobile-settings-resume-btn').onclick = closeMobileSettings;
+document.getElementById('mobile-settings-restart-btn').onclick = startGame;
+document.getElementById('mobile-settings-menu-btn').onclick = showMenu;
+document.getElementById('mobile-settings-close-btn').onclick = closeMobileSettings;
 
 ui.target.addEventListener('click', function(e) {
     e.preventDefault();
@@ -1880,5 +2068,6 @@ document.getElementById('chest-close-btn').onclick = function() {
 
 scaleCanvas();
 showMenu();
+updateOrientationState();
 
 })();
