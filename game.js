@@ -306,8 +306,8 @@ var game = {
     attractMode: false,
     score: 0,
     sessionCoins: 0,
-    speed: 1.6,
-    baseSpeed: 1.6,
+    speed: 1.2,
+    baseSpeed: 1.2,
     biomeIndex: 0,
     biomeTransition: 0,
     prevBiomeIndex: -1,
@@ -350,7 +350,7 @@ var bgLayers = { far: [], mid: [], stars: [] };
 var loopActive = false;
 var pointerStart = null;
 var hitFeedbackTimer = 0;
-var targetHitRadius = 14;
+var targetHitRadius = 17;
 
 function rgb(arr) {
     return 'rgb(' + arr[0] + ',' + arr[1] + ',' + arr[2] + ')';
@@ -666,8 +666,8 @@ function initializeRun(attractMode) {
     game.attractMode = attractMode;
     game.score = 0;
     game.sessionCoins = 0;
-    game.speed = 1.6;
-    game.baseSpeed = 1.6;
+    game.speed = 1.2;
+    game.baseSpeed = 1.2;
     game.biomeIndex = 0;
     game.prevBiomeIndex = -1;
     game.biomeTransition = 1;
@@ -1033,8 +1033,8 @@ function updateCoins() {
 
 function getTimingTarget(wall) {
     return {
-        x: wall.x + wall.w / 2,
-        y: Math.max(28, Math.min(GROUND_Y - 34, Math.round(GROUND_Y * 0.52)))
+        x: Math.round(W * 0.7),
+        y: Math.max(32, Math.min(GROUND_Y - 36, Math.round(GROUND_Y * 0.48)))
     };
 }
 
@@ -1196,7 +1196,7 @@ function updateBiome() {
 function update() {
     game.frameCount++;
     game.score += game.speed * 0.05;
-    game.speed = Math.min(6, game.baseSpeed + game.score * 0.006);
+    game.speed = Math.min(5.2, game.baseSpeed + game.score * 0.004 + game.score * game.score * 0.000004);
 
     updateBiome();
     updatePlayer();
