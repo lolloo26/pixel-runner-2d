@@ -26,30 +26,30 @@ var MAX_JUMP_HEIGHT = 42;
 function scaleCanvas() {
     var cw = window.innerWidth;
     var ch = window.innerHeight;
+    var previousWidth = W;
     var previousGround = GROUND_Y;
-    H = Math.max(180, Math.min(680, Math.round(W * ch / cw)));
+    if (cw / ch >= 16 / 9) {
+        H = 180;
+        W = Math.max(320, Math.round(H * cw / ch));
+    } else {
+        W = 320;
+        H = Math.max(180, Math.round(W * ch / cw));
+    }
     GROUND_Y = H - 22;
     canvas.height = H;
     ctx.imageSmoothingEnabled = false;
     var groundShift = GROUND_Y - previousGround;
-    if (typeof player !== 'undefined' && groundShift !== 0) {
+    if (typeof player !== 'undefined' && (groundShift !== 0 || W !== previousWidth)) {
         if (player.grounded) player.y += groundShift;
         for (var i = 0; i < obstacles.length; i++) obstacles[i].y += groundShift;
         for (var i = 0; i < coins.length; i++) coins[i].y += groundShift;
         for (var j = 0; j < walls.length; j++) walls[j].h = GROUND_Y;
         initBgElements();
     }
-    var scaleX = cw / W;
-    var scaleY = ch / H;
-    var scale = Math.min(scaleX, scaleY);
-    var pw = Math.round(W * scale);
-    var ph = Math.round(H * scale);
-    var ox = Math.floor((cw - pw) / 2);
-    var oy = Math.floor((ch - ph) / 2);
-    canvas.style.width  = pw + 'px';
-    canvas.style.height = ph + 'px';
-    canvas.style.left   = ox + 'px';
-    canvas.style.top    = oy + 'px';
+    canvas.style.width = cw + 'px';
+    canvas.style.height = ch + 'px';
+    canvas.style.left = '0px';
+    canvas.style.top = '0px';
 }
 
 window.addEventListener('resize', scaleCanvas);
@@ -272,6 +272,7 @@ var ui = {
     shop:         document.getElementById('shop-menu'),
     chestOverlay: document.getElementById('chest-overlay'),
     score:        document.getElementById('current-score'),
+    target:       document.getElementById('wall-hit-target'),
     coinCount:    document.getElementById('coin-count'),
     biome:        document.getElementById('biome-indicator'),
     prompt:       document.getElementById('timing-prompt'),
@@ -351,6 +352,7 @@ var loopActive = false;
 var pointerStart = null;
 var hitFeedbackTimer = 0;
 var targetHitRadius = 17;
+var displayedScore = -1;
 
 function rgb(arr) {
     return 'rgb(' + arr[0] + ',' + arr[1] + ',' + arr[2] + ')';
@@ -697,8 +699,10 @@ function initializeRun(attractMode) {
     ui.duck.classList.toggle('active', !attractMode && window.matchMedia('(pointer: coarse)').matches);
     ui.prompt.classList.add('hidden');
     ui.prompt.classList.remove('hit-good');
+    ui.target.classList.add('hidden');
     ui.newRecord.classList.add('hidden');
     ui.biome.textContent = BIOMES[0].name;
+    displayedScore = -1;
 
     ensureLoop();
 }
@@ -733,6 +737,7 @@ function gameOver() {
     ui.duck.classList.remove('active');
     ui.prompt.classList.add('hidden');
     ui.prompt.classList.remove('hit-good');
+    ui.target.classList.add('hidden');
     hitFeedbackTimer = 0;
     ui.over.classList.remove('hidden');
     ui.finalScore.textContent = 'PUNTI: ' + score;
@@ -1031,13 +1036,6 @@ function updateCoins() {
     }
 }
 
-function getTimingTarget(wall) {
-    return {
-        x: Math.round(W * 0.7),
-        y: Math.max(32, Math.min(GROUND_Y - 36, Math.round(GROUND_Y * 0.48)))
-    };
-}
-
 function activeTimingWall() {
     for (var i = 0; i < walls.length; i++) {
         if (!walls[i].destroyed && walls[i].windowStart >= 0) return walls[i];
@@ -1045,15 +1043,10 @@ function activeTimingWall() {
     return null;
 }
 
-function getTargetOuterRadius(wall) {
-    var progress = Math.max(0, Math.min(1, wall.windowStart / wall.windowDuration));
-    return targetHitRadius + (38 - targetHitRadius) * (1 - progress);
-}
-
 function attemptWallHit(wall) {
     if (!wall || wall.destroyed || wall.windowStart < 0) return false;
     var progress = wall.windowStart / wall.windowDuration;
-    if (progress < 0.72 || progress > 0.98) {
+    if (progress < 0.84 || progress > 0.98) {
         game.screenShake = 11;
         gameOver();
         return false;
@@ -1061,6 +1054,7 @@ function attemptWallHit(wall) {
 
     wall.destroyed = true;
     wall.flashTimer = 0;
+    ui.target.classList.add('hidden');
     game.score += 25;
     game.sessionCoins += 5;
     game.flashAlpha = 0.6;
@@ -1089,6 +1083,7 @@ function updateWalls() {
         wall.x -= game.speed;
 
         if (wall.destroyed) {
+            ui.target.classList.add('hidden');
             wall.flashTimer++;
             if (wall.flashTimer > 22) {
                 walls.splice(i, 1);
@@ -1107,11 +1102,17 @@ function updateWalls() {
                 ui.prompt.textContent = 'TOCCA IL BERSAGLIO A TEMPO';
                 ui.prompt.classList.remove('hit-good');
                 ui.prompt.classList.remove('hidden');
+                ui.target.classList.remove('hidden');
             }
         }
 
         if (wall.windowStart >= 0) {
             wall.windowStart++;
+            if (!game.attractMode) {
+                var progress = Math.min(1, wall.windowStart / wall.windowDuration);
+                var approachScale = 1 + (38 / targetHitRadius) * (1 - progress);
+                ui.target.style.setProperty('--approach-scale', approachScale.toFixed(3));
+            }
             if (game.attractMode && wall.windowStart / wall.windowDuration >= 0.92) {
                 attemptWallHit(wall);
             }
@@ -1196,7 +1197,8 @@ function updateBiome() {
 function update() {
     game.frameCount++;
     game.score += game.speed * 0.05;
-    game.speed = Math.min(5.2, game.baseSpeed + game.score * 0.004 + game.score * game.score * 0.000004);
+    var targetSpeed = game.baseSpeed + (5.2 - game.baseSpeed) * (1 - Math.exp(-game.score / 1100));
+    game.speed += (targetSpeed - game.speed) * 0.015;
 
     updateBiome();
     updatePlayer();
@@ -1219,7 +1221,14 @@ function update() {
         }
     }
 
-    ui.score.textContent    = Math.floor(game.score);
+    var scoreValue = Math.floor(game.score);
+    if (scoreValue !== displayedScore) {
+        ui.score.textContent = scoreValue;
+        ui.score.classList.remove('score-pop');
+        void ui.score.offsetWidth;
+        ui.score.classList.add('score-pop');
+        displayedScore = scoreValue;
+    }
     ui.coinCount.textContent = 'x' + game.sessionCoins;
 }
 
@@ -1498,37 +1507,6 @@ function drawWalls() {
     }
 }
 
-function drawTimingTarget() {
-    var wall = activeTimingWall();
-    if (!wall) return;
-    var target = getTimingTarget(wall);
-    var outerRadius = getTargetOuterRadius(wall);
-    var accent = transitionedColor('accent');
-
-    ctx.save();
-    ctx.shadowColor = rgb(accent);
-    ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.arc(target.x, target.y, outerRadius, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.beginPath();
-    ctx.arc(target.x, target.y, targetHitRadius, 0, Math.PI * 2);
-    ctx.fillStyle = rgba(accent, 0.92);
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 7px "Courier New", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('HIT', target.x, target.y + 0.5);
-    ctx.restore();
-}
-
 function drawParticles() {
     for (var i = 0; i < particles.length; i++) {
         var p = particles[i];
@@ -1562,7 +1540,6 @@ function draw() {
     drawPlayer();
     drawParticles();
     drawEffects();
-    drawTimingTarget();
 
     ctx.restore();
 }
@@ -1611,27 +1588,13 @@ window.addEventListener('keyup', function(e) {
     keys[e.code] = false;
 });
 
-function canvasPoint(e) {
-    var rect = canvas.getBoundingClientRect();
-    return {
-        x: (e.clientX - rect.left) * W / rect.width,
-        y: (e.clientY - rect.top) * H / rect.height
-    };
-}
-
 canvas.addEventListener('pointerdown', function(e) {
     if (!game.running || game.attractMode || (e.pointerType === 'mouse' && e.button !== 0)) return;
     e.preventDefault();
-    var point = canvasPoint(e);
     var wall = activeTimingWall();
     if (wall) {
-        var target = getTimingTarget(wall);
-        var dx = point.x - target.x;
-        var dy = point.y - target.y;
-        if (dx * dx + dy * dy <= Math.pow(getTargetOuterRadius(wall) + 7, 2)) {
-            attemptWallHit(wall);
-            return;
-        }
+        attemptWallHit(wall);
+        return;
     }
     pointerStart = { id: e.pointerId, x: e.clientX, y: e.clientY, swiped: false };
     player.jumpBuffer = 4;
@@ -1677,6 +1640,12 @@ ui.duck.addEventListener('pointerdown', function(e) {
     duckPointerId = e.pointerId;
     keys.ArrowDown = true;
     if (ui.duck.setPointerCapture) ui.duck.setPointerCapture(e.pointerId);
+});
+
+ui.target.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    attemptWallHit(activeTimingWall());
 });
 
 document.getElementById('start-btn').onclick = function() {
