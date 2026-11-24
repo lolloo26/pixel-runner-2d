@@ -1114,6 +1114,14 @@ function updateCoins() {
 var BIOME_TRANSITION_DURATION = 2400;
 
 function beginBiomeTransition() {
+    if (game.attractMode) {
+        game.biomeTransitionTimer = 0;
+        ui.biomeTransition.classList.add('hidden');
+        ui.biomeParticles.innerHTML = '';
+        ui.overlay.classList.remove('theme-jungle', 'theme-volcano', 'theme-glacier', 'theme-neon');
+        return;
+    }
+
     var transition = biome();
     var colors = {
         jungle: '#58ff91',
@@ -1528,6 +1536,54 @@ function drawPlayer() {
     }
 
     drawOutlinedSprite(player.x, py, sprite, colors, outlineColor);
+    drawBiomeOutfit(player.x, py);
+}
+
+function drawOutfitPixels(x, y, pixels) {
+    for (var i = 0; i < pixels.length; i++) {
+        ctx.fillStyle = pixels[i][2];
+        ctx.fillRect(Math.floor(x + pixels[i][0]), Math.floor(y + pixels[i][1]), 1, 1);
+    }
+}
+
+function drawBiomeOutfit(x, y) {
+    var crouching = player.crouching;
+    var bodyRow = crouching ? 3 : 5;
+
+    if (biome().theme === 'jungle') {
+        drawOutfitPixels(x, y, [
+            [3, bodyRow, '#236b32'], [4, bodyRow, '#7e6a32'], [6, bodyRow, '#28522c'],
+            [2, bodyRow + 1, '#7e6a32'], [4, bodyRow + 1, '#236b32'], [5, bodyRow + 1, '#805b32'],
+            [3, bodyRow + 2, '#28522c'], [6, bodyRow + 2, '#7e6a32']
+        ]);
+    } else if (biome().theme === 'volcano') {
+        var shortsRow = crouching ? 5 : 7;
+        drawOutfitPixels(x, y, [
+            [2, shortsRow, '#f4c928'], [3, shortsRow, '#ffdc3d'], [4, shortsRow, '#f4c928'],
+            [5, shortsRow, '#ffdc3d'], [6, shortsRow, '#f4c928'], [3, shortsRow + 1, '#d99b18'],
+            [5, shortsRow + 1, '#d99b18'], [2, 2, '#171923'], [3, 2, '#252733'],
+            [4, 2, '#171923'], [5, 2, '#252733'], [6, 2, '#171923'], [3, 1, '#ffffff'],
+            [6, 1, '#ffffff']
+        ]);
+    } else if (biome().theme === 'glacier') {
+        drawOutfitPixels(x, y, [
+            [2, bodyRow, '#eaf7ff'], [3, bodyRow, '#ffffff'], [4, bodyRow, '#c9e8f5'],
+            [5, bodyRow, '#ffffff'], [6, bodyRow, '#eaf7ff'], [2, bodyRow + 1, '#bdddec'],
+            [3, bodyRow + 1, '#f5fbff'], [4, bodyRow + 1, '#bdddec'], [5, bodyRow + 1, '#f5fbff'],
+            [6, bodyRow + 1, '#bdddec'], [3, bodyRow + 2, '#d6edf7'], [5, bodyRow + 2, '#d6edf7'],
+            [2, 2, '#253b56'], [3, 2, '#80e7ff'], [4, 2, '#c5f6ff'], [5, 2, '#80e7ff'],
+            [6, 2, '#253b56'], [3, 1, '#eaf7ff'], [4, 1, '#eaf7ff'], [5, 1, '#eaf7ff']
+        ]);
+    } else {
+        var scarfRow = crouching ? 3 : 4;
+        drawOutfitPixels(x, y, [
+            [3, 0, '#d9b947'], [4, 0, '#f2d879'], [5, 0, '#d9b947'],
+            [2, 1, '#c5a43a'], [3, 1, '#f2d879'], [4, 1, '#d9b947'],
+            [5, 1, '#f2d879'], [6, 1, '#c5a43a'], [2, scarfRow, '#c5a43a'],
+            [3, scarfRow, '#f2d879'], [4, scarfRow, '#d9b947'], [5, scarfRow, '#f2d879'],
+            [6, scarfRow, '#c5a43a']
+        ]);
+    }
 }
 
 function drawObstacle(o) {
