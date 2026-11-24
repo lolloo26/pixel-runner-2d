@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Pixel Runner 2D</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,12 +14,26 @@
         <canvas id="game-canvas"></canvas>
         <div id="ui-overlay">
             <div id="main-menu" class="overlay-screen">
-                <h1>PIXEL RUNNER</h1>
-                <button id="start-btn">GIOCA</button>
-                <button id="shop-btn">NEGOZIO</button>
-                <div id="main-instructions">TOCCA O PREMI SPAZIO PER SALTARE<br>↓ / FRECCIA GIÙ PER SCIVOLARE<br>COLPISCI IL BERSAGLIO AL MOMENTO GIUSTO</div>
-                <div id="main-coins" class="coin-display"></div>
-                <div id="main-highscore"></div>
+                <div class="menu-stat" id="main-coins">
+                    <span class="stat-icon">✦</span>
+                    <span class="stat-label">MONETE</span>
+                    <strong id="main-coins-value">0</strong>
+                </div>
+                <div class="menu-stat" id="main-highscore">
+                    <span class="stat-icon">♛</span>
+                    <span class="stat-label">RECORD</span>
+                    <strong id="main-highscore-value">0</strong>
+                </div>
+                <div id="main-panel" class="glass-panel">
+                    <div class="menu-eyebrow">PIXEL WORLD · INFINITE RUN</div>
+                    <h1><span>PIXEL</span><span>RUNNER</span></h1>
+                    <p class="menu-tagline">Corri oltre i confini.</p>
+                    <div class="menu-actions">
+                        <button id="start-btn" class="primary-button">GIOCA</button>
+                        <button id="shop-btn">NEGOZIO</button>
+                        <button id="main-controls-btn">COMANDI</button>
+                    </div>
+                </div>
             </div>
 
             <div id="game-ui" class="hidden">
@@ -44,6 +61,43 @@
                 <button id="restart-btn">RIPROVA</button>
                 <button id="gameover-shop-btn">NEGOZIO</button>
                 <button id="menu-btn">MENU</button>
+            </div>
+
+            <div id="pause-menu" class="overlay-screen hidden">
+                <div class="glass-panel pause-panel">
+                    <div class="menu-eyebrow">RUN IN PAUSA</div>
+                    <h2>PAUSA</h2>
+                    <button id="resume-btn" class="primary-button">RIPRENDI</button>
+                    <button id="pause-controls-btn">COMANDI</button>
+                    <button id="pause-restart-btn">RIAVVIA</button>
+                    <button id="pause-menu-btn">MENU PRINCIPALE</button>
+                </div>
+            </div>
+
+            <div id="commands-menu" class="overlay-screen hidden">
+                <div class="glass-panel commands-panel">
+                    <div class="menu-eyebrow">GUIDA RAPIDA</div>
+                    <h2>COMANDI</h2>
+                    <div class="command-list">
+                        <div class="command-row">
+                            <span class="command-icon">↟</span>
+                            <div><strong>Salto</strong><div class="key-badges"><kbd>SPAZIO</kbd><kbd>↑</kbd><kbd>W</kbd><kbd>TAP</kbd></div></div>
+                        </div>
+                        <div class="command-row">
+                            <span class="command-icon">↓</span>
+                            <div><strong>Scivolata / caduta rapida</strong><div class="key-badges"><kbd>↓</kbd><kbd>S</kbd><kbd>SWIPE ↓</kbd></div></div>
+                        </div>
+                        <div class="command-row">
+                            <span class="command-icon">◎</span>
+                            <div><strong>Distruggi parete</strong><div class="key-badges"><kbd>CLICK / TAP SUL BERSAGLIO</kbd></div></div>
+                        </div>
+                        <div class="command-row">
+                            <span class="command-icon">Ⅱ</span>
+                            <div><strong>Pausa</strong><div class="key-badges"><kbd>ESC</kbd></div></div>
+                        </div>
+                    </div>
+                    <button id="commands-close-btn" class="primary-button">CHIUDI</button>
+                </div>
             </div>
 
             <div id="shop-menu" class="overlay-screen hidden">

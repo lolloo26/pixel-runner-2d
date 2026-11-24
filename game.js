@@ -273,6 +273,8 @@ var ui = {
     main:         document.getElementById('main-menu'),
     game:         document.getElementById('game-ui'),
     over:         document.getElementById('game-over'),
+    pause:        document.getElementById('pause-menu'),
+    commands:     document.getElementById('commands-menu'),
     shop:         document.getElementById('shop-menu'),
     chestOverlay: document.getElementById('chest-overlay'),
     overlay:      document.getElementById('ui-overlay'),
@@ -285,8 +287,8 @@ var ui = {
     biome:        document.getElementById('biome-indicator'),
     prompt:       document.getElementById('timing-prompt'),
     duck:         document.getElementById('duck-control'),
-    highScore:    document.getElementById('main-highscore'),
-    mainCoins:    document.getElementById('main-coins'),
+    highScore:    document.getElementById('main-highscore-value'),
+    mainCoins:    document.getElementById('main-coins-value'),
     shopCoins:    document.getElementById('shop-coins'),
     skinList:     document.getElementById('skin-selector'),
     finalScore:   document.getElementById('final-score'),
@@ -312,6 +314,7 @@ function persist() {
 
 var game = {
     running: false,
+    paused: false,
     attractMode: false,
     score: 0,
     sessionCoins: 0,
@@ -674,6 +677,7 @@ function resetPlayer() {
 
 function initializeRun(attractMode) {
     game.running = true;
+    game.paused = false;
     game.attractMode = attractMode;
     game.score = 0;
     game.sessionCoins = 0;
@@ -703,6 +707,8 @@ function initializeRun(attractMode) {
     initBgElements();
 
     ui.over.classList.add('hidden');
+    ui.pause.classList.add('hidden');
+    ui.commands.classList.add('hidden');
     ui.shop.classList.add('hidden');
     ui.main.classList.toggle('hidden', !attractMode);
     ui.game.classList.toggle('hidden', attractMode);
@@ -733,6 +739,7 @@ function gameOver() {
     }
 
     game.running = false;
+    game.paused = false;
 
     var score = Math.floor(game.score);
     save.coins += game.sessionCoins;
@@ -745,6 +752,8 @@ function gameOver() {
     persist();
 
     ui.game.classList.add('hidden');
+    ui.pause.classList.add('hidden');
+    ui.commands.classList.add('hidden');
     ui.duck.classList.remove('active');
     ui.prompt.classList.add('hidden');
     ui.prompt.classList.remove('hit-good');
@@ -766,12 +775,56 @@ function gameOver() {
 
 function showMenu() {
     ui.over.classList.add('hidden');
+    ui.pause.classList.add('hidden');
+    ui.commands.classList.add('hidden');
     ui.shop.classList.add('hidden');
     ui.chestOverlay.classList.add('hidden');
     ui.main.classList.remove('hidden');
-    ui.highScore.textContent = 'RECORD: ' + save.highScore;
-    ui.mainCoins.textContent = 'MONETE: ' + save.coins;
+    ui.highScore.textContent = save.highScore;
+    ui.mainCoins.textContent = save.coins;
     if (!game.running || !game.attractMode) startAttract();
+}
+
+function openCommands() {
+    ui.commands.classList.remove('hidden');
+}
+
+function closeCommands() {
+    ui.commands.classList.add('hidden');
+}
+
+function pauseGame() {
+    if (!game.running || game.attractMode || game.paused) return;
+    game.paused = true;
+    keys = {};
+    pointerStart = null;
+    duckPointerId = null;
+    ui.duck.classList.remove('active');
+    ui.pause.classList.remove('hidden');
+}
+
+function resumeGame() {
+    if (!game.paused) return;
+    game.paused = false;
+    keys = {};
+    pointerStart = null;
+    duckPointerId = null;
+    ui.pause.classList.add('hidden');
+    ui.commands.classList.add('hidden');
+    ui.duck.classList.toggle('active', window.matchMedia('(pointer: coarse)').matches);
+    lastTime = performance.now();
+}
+
+function handleEscape() {
+    if (!ui.commands.classList.contains('hidden')) {
+        closeCommands();
+        return;
+    }
+    if (game.paused) {
+        resumeGame();
+        return;
+    }
+    pauseGame();
 }
 
 function showShop(fromGameOver) {
@@ -947,7 +1000,7 @@ function updatePlayer() {
         keys.ArrowDown = game.autoCrouch;
     }
 
-    var jumpInput = keys['Space'] || keys['ArrowUp'] || player.jumpBuffer > 0;
+    var jumpInput = keys['Space'] || keys['ArrowUp'] || keys['KeyW'] || player.jumpBuffer > 0;
     if (player.jumpBuffer > 0) player.jumpBuffer--;
     if (jumpInput) {
         if (player.grounded) {
@@ -963,7 +1016,8 @@ function updatePlayer() {
         player.jumpHeld = false;
     }
 
-    if (keys['ArrowDown']) {
+    var downInput = keys['ArrowDown'] || keys['KeyS'];
+    if (downInput) {
         player.crouching = player.grounded;
         if (!player.grounded) {
             player.vy += 2.2;
@@ -974,7 +1028,7 @@ function updatePlayer() {
 
     if (!player.grounded) {
         player.vy += GRAVITY;
-        var maxFall = keys['ArrowDown'] ? MAX_FALL + 4 : MAX_FALL;
+        var maxFall = downInput ? MAX_FALL + 4 : MAX_FALL;
         if (player.vy > maxFall) player.vy = maxFall;
         player.y += player.vy;
     }
@@ -1642,6 +1696,12 @@ function loop(time) {
         return;
     }
 
+    if (game.paused) {
+        lastTime = time;
+        requestAnimationFrame(loop);
+        return;
+    }
+
     var dt = time - lastTime;
     lastTime = time;
 
@@ -1658,10 +1718,15 @@ function loop(time) {
 }
 
 window.addEventListener('keydown', function(e) {
-    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+    if (e.code === 'Escape') {
+        e.preventDefault();
+        if (!e.repeat) handleEscape();
+        return;
+    }
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'KeyW' || e.code === 'KeyS') {
         e.preventDefault();
     }
-    if ((e.code === 'Space' || e.code === 'ArrowUp') && !e.repeat && game.running && !game.attractMode) {
+    if ((e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') && !e.repeat && game.running && !game.attractMode) {
         player.jumpBuffer = 4;
     }
     keys[e.code] = true;
@@ -1736,7 +1801,13 @@ document.getElementById('restart-btn').onclick = function() {
 };
 document.getElementById('menu-btn').onclick = showMenu;
 document.getElementById('shop-btn').onclick = function() { showShop(false); };
+document.getElementById('main-controls-btn').onclick = openCommands;
 document.getElementById('gameover-shop-btn').onclick = function() { showShop(true); };
+document.getElementById('resume-btn').onclick = resumeGame;
+document.getElementById('pause-controls-btn').onclick = openCommands;
+document.getElementById('pause-restart-btn').onclick = startGame;
+document.getElementById('pause-menu-btn').onclick = showMenu;
+document.getElementById('commands-close-btn').onclick = closeCommands;
 document.getElementById('back-btn').onclick = function() {
     if (ui.shop._fromGameOver) {
         ui.shop.classList.add('hidden');
