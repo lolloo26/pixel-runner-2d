@@ -366,6 +366,7 @@ var ui = {
     game:         document.getElementById('game-ui'),
     over:         document.getElementById('game-over'),
     pause:        document.getElementById('pause-menu'),
+    musicToggle:  document.getElementById('music-toggle'),
     mobileSettings: document.getElementById('mobile-settings-menu'),
     mobileSettingsButton: document.getElementById('mobile-settings-button'),
     audioToggle:  document.getElementById('mobile-audio-toggle'),
@@ -435,6 +436,271 @@ var game = {
     autoCrouch: false
 };
 
+var music = (function() {
+    var paths = [
+        'audio/giungla.mp3',
+        'audio/vulcano.mp3',
+        'audio/ghiacciaio.mp3',
+        'audio/deserto.mp3'
+    ];
+    var tracks = paths.map(function(path) {
+        var audio = new Audio(path);
+        audio.loop = true;
+        audio.preload = 'none';
+        var track = {
+            audio: audio,
+            source: null,
+            gain: null,
+            level: 0,
+            fade: null,
+            fadeTimer: null,
+            stopTimer: null,
+            active: false
+        };
+        audio.addEventListener('error', function() {
+            showAudioError('Impossibile caricare ' + path);
+        });
+        return track;
+    });
+    var context = null;
+    var unlocked = false;
+    var enabled = save.audioEnabled;
+    var paused = false;
+    var currentIndex = -1;
+    var volume = 0.32;
+    var crossfadeDuration = 1.8;
+
+    function showAudioError(message) {
+        ui.musicToggle.title = message;
+        ui.audioToggle.title = message;
+    }
+
+    function prepareAudioGraph() {
+        if (context) return;
+        var AudioContextType = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextType) return;
+
+        try {
+            context = new AudioContextType();
+            for (var i = 0; i < tracks.length; i++) {
+                tracks[i].source = context.createMediaElementSource(tracks[i].audio);
+                tracks[i].gain = context.createGain();
+                tracks[i].gain.gain.value = 0;
+                tracks[i].source.connect(tracks[i].gain);
+                tracks[i].gain.connect(context.destination);
+            }
+        } catch (error) {
+            context = null;
+            showAudioError('Il sistema audio del browser non è disponibile');
+        }
+    }
+
+    function cancelTrackTimers(track) {
+        clearInterval(track.fadeTimer);
+        clearTimeout(track.stopTimer);
+        track.fadeTimer = null;
+        track.stopTimer = null;
+    }
+
+    function getTrackLevel(track, now) {
+        if (!track.fade) return track.level;
+        if (now >= track.fade.end) return track.fade.to;
+        var progress = Math.max(0, (now - track.fade.start) / (track.fade.end - track.fade.start));
+        return track.fade.from + (track.fade.to - track.fade.from) * progress;
+    }
+
+    function setTrackLevel(track, target, duration) {
+        clearInterval(track.fadeTimer);
+        track.fadeTimer = null;
+
+        if (track.gain && context && context.state !== 'closed') {
+            var now = context.currentTime;
+            var param = track.gain.gain;
+            var from = getTrackLevel(track, now);
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(from, now);
+            if (duration > 0) {
+                param.linearRampToValueAtTime(target, now + duration);
+                track.fade = { from: from, to: target, start: now, end: now + duration };
+            } else {
+                param.setValueAtTime(target, now);
+                track.fade = null;
+            }
+            track.level = target;
+            return;
+        }
+
+        var startVolume = track.audio.volume;
+        if (duration <= 0) {
+            track.audio.volume = target;
+            track.level = target;
+            track.fade = null;
+            return;
+        }
+
+        var started = performance.now();
+        track.fade = { from: startVolume, to: target, start: started, end: started + duration * 1000 };
+        track.fadeTimer = setInterval(function() {
+            var progress = Math.min(1, (performance.now() - started) / (duration * 1000));
+            track.audio.volume = startVolume + (target - startVolume) * progress;
+            track.level = track.audio.volume;
+            if (progress >= 1) {
+                clearInterval(track.fadeTimer);
+                track.fadeTimer = null;
+                track.fade = null;
+            }
+        }, 30);
+    }
+
+    function stopTrack(index, reset) {
+        var track = tracks[index];
+        cancelTrackTimers(track);
+        setTrackLevel(track, 0, 0);
+        track.audio.pause();
+        track.active = false;
+        if (reset) track.audio.currentTime = 0;
+    }
+
+    function scheduleStop(index, duration, reset) {
+        var track = tracks[index];
+        clearTimeout(track.stopTimer);
+        track.stopTimer = setTimeout(function() {
+            stopTrack(index, reset);
+        }, duration * 1000 + 40);
+    }
+
+    function startTrack(index, restart) {
+        var track = tracks[index];
+        clearTimeout(track.stopTimer);
+        track.stopTimer = null;
+        if (track.active) return;
+        if (restart) track.audio.currentTime = 0;
+        setTrackLevel(track, 0, 0);
+        track.active = true;
+        var result;
+        try {
+            result = track.audio.play();
+        } catch (error) {
+            track.active = false;
+            showAudioError('Riproduzione non disponibile: ' + paths[index]);
+            return;
+        }
+        if (result && typeof result.catch === 'function') {
+            result.catch(function(error) {
+                track.active = false;
+                setTrackLevel(track, 0, 0);
+                if (!error || error.name !== 'NotAllowedError') {
+                    showAudioError('Riproduzione non disponibile: ' + paths[index]);
+                }
+            });
+        }
+    }
+
+    function setBiome(index) {
+        index = (index + tracks.length) % tracks.length;
+        var previousIndex = currentIndex;
+        currentIndex = index;
+        if (!enabled || !unlocked || paused) return;
+        if (previousIndex === index && tracks[index].active &&
+            (!tracks[index].fade || tracks[index].fade.to === volume)) return;
+
+        for (var i = 0; i < tracks.length; i++) {
+            if (i !== previousIndex && i !== index && tracks[i].active) stopTrack(i, true);
+        }
+
+        startTrack(index, true);
+        setTrackLevel(tracks[index], volume, crossfadeDuration);
+
+        if (previousIndex >= 0 && previousIndex !== index && tracks[previousIndex].active) {
+            setTrackLevel(tracks[previousIndex], 0, crossfadeDuration);
+            scheduleStop(previousIndex, crossfadeDuration, true);
+        }
+    }
+
+    function unlock() {
+        if (!unlocked) {
+            prepareAudioGraph();
+            unlocked = true;
+            if (context && context.state !== 'running') {
+                context.resume().catch(function(error) {
+                    unlocked = false;
+                    if (error.name !== 'NotAllowedError') {
+                        showAudioError('Impossibile avviare l’audio del browser');
+                    }
+                });
+            }
+        }
+        if (currentIndex < 0) currentIndex = 0;
+        if (enabled && !paused) setBiome(currentIndex);
+    }
+
+    function setEnabled(value) {
+        enabled = value;
+        if (!enabled) {
+            for (var i = 0; i < tracks.length; i++) {
+                if (tracks[i].active) stopTrack(i, true);
+            }
+        } else if (unlocked && !paused && currentIndex >= 0) {
+            setBiome(currentIndex);
+        }
+    }
+
+    function setPaused(value) {
+        if (paused === value) return;
+        paused = value;
+        if (paused) {
+            for (var i = 0; i < tracks.length; i++) {
+                if (!tracks[i].active) continue;
+                setTrackLevel(tracks[i], 0, 0.25);
+                scheduleStop(i, 0.25, false);
+            }
+        } else if (enabled && unlocked && currentIndex >= 0) {
+            for (var j = 0; j < tracks.length; j++) {
+                if (j !== currentIndex && tracks[j].active) stopTrack(j, true);
+            }
+            startTrack(currentIndex, false);
+            setTrackLevel(tracks[currentIndex], volume, 0.35);
+        }
+    }
+
+    function fadeOut(duration) {
+        for (var i = 0; i < tracks.length; i++) {
+            if (!tracks[i].active) continue;
+            setTrackLevel(tracks[i], 0, duration);
+            scheduleStop(i, duration, true);
+        }
+    }
+
+    return {
+        unlock: unlock,
+        setBiome: setBiome,
+        setEnabled: setEnabled,
+        setPaused: setPaused,
+        fadeOut: fadeOut
+    };
+})();
+
+function updateAudioControls() {
+    var enabled = save.audioEnabled;
+    ui.audioToggle.textContent = 'AUDIO: ' + (enabled ? 'ON' : 'OFF');
+    ui.audioToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    ui.musicToggle.firstElementChild.textContent = enabled ? '🔊' : '🔇';
+    ui.musicToggle.setAttribute('aria-label', enabled ? 'Disattiva musica' : 'Attiva musica');
+    ui.musicToggle.setAttribute('title', enabled ? 'Disattiva musica' : 'Attiva musica');
+    ui.musicToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+}
+
+function toggleAudio() {
+    save.audioEnabled = !save.audioEnabled;
+    persist();
+    music.setEnabled(save.audioEnabled);
+    updateAudioControls();
+}
+
+function unlockMusic() {
+    music.unlock();
+}
+
 function updateOrientationState() {
     var viewport = window.visualViewport;
     var width = viewport && viewport.width ? viewport.width : window.innerWidth;
@@ -452,11 +718,13 @@ function updateOrientationState() {
     if (portrait && game.running && !game.paused) {
         game.paused = true;
         orientationPaused = true;
+        music.setPaused(true);
         keys = {};
         clearTouchInputs();
     } else if (!portrait && orientationPaused) {
         orientationPaused = false;
         game.paused = false;
+        music.setPaused(false);
         ui.pause.classList.add('hidden');
         lastTime = performance.now();
     }
@@ -831,6 +1099,8 @@ function initializeRun(attractMode) {
     game.speed = 1.2;
     game.baseSpeed = 1.2;
     game.biomeIndex = 0;
+    music.setPaused(false);
+    music.setBiome(0);
     game.prevBiomeIndex = -1;
     game.biomeTransition = 1;
     game.biomeTransitionTimer = 0;
@@ -891,6 +1161,7 @@ function gameOver() {
         return;
     }
 
+    music.fadeOut(0.8);
     game.running = false;
     game.paused = false;
     orientationPaused = false;
@@ -974,6 +1245,7 @@ function closeMobileSettings() {
 function pauseGame() {
     if (!game.running || game.attractMode || game.paused) return;
     game.paused = true;
+    music.setPaused(true);
     keys = {};
     clearTouchInputs();
     ui.duck.classList.remove('active');
@@ -984,6 +1256,7 @@ function resumeGame() {
     if (!game.paused) return;
     if (orientationPaused) return;
     game.paused = false;
+    music.setPaused(false);
     keys = {};
     clearTouchInputs();
     ui.pause.classList.add('hidden');
@@ -1591,6 +1864,7 @@ function updateBiome() {
     if (newBiome !== game.biomeIndex) {
         game.prevBiomeIndex = game.biomeIndex;
         game.biomeIndex = newBiome;
+        music.setBiome(newBiome);
         game.biomeTransition = 0;
         ui.biome.textContent = BIOMES[game.biomeIndex].name;
         beginBiomeTransition();
@@ -2161,17 +2435,14 @@ document.addEventListener('pointerdown', function firstMobileTouch() {
     if (isMobileTouch()) requestMobilePresentation();
 }, { once: true });
 
-ui.audioToggle.onclick = function() {
-    save.audioEnabled = !save.audioEnabled;
-    ui.audioToggle.textContent = 'AUDIO: ' + (save.audioEnabled ? 'ON' : 'OFF');
-    ui.audioToggle.setAttribute('aria-pressed', save.audioEnabled ? 'true' : 'false');
-    persist();
-};
+document.addEventListener('pointerdown', unlockMusic);
+document.addEventListener('keydown', unlockMusic);
+ui.audioToggle.onclick = toggleAudio;
+ui.musicToggle.onclick = toggleAudio;
 ui.touchSize.value = localStorage.getItem('pr_touch_size') || '60';
 ui.touchOpacity.value = localStorage.getItem('pr_touch_opacity') || '70';
 updateTouchButtonPreferences();
-ui.audioToggle.textContent = 'AUDIO: ' + (save.audioEnabled ? 'ON' : 'OFF');
-ui.audioToggle.setAttribute('aria-pressed', save.audioEnabled ? 'true' : 'false');
+updateAudioControls();
 ui.touchSize.addEventListener('input', updateTouchButtonPreferences);
 ui.touchOpacity.addEventListener('input', updateTouchButtonPreferences);
 document.getElementById('mobile-settings-controls-btn').onclick = openCommands;

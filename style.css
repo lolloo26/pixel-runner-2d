@@ -1000,6 +1000,35 @@ body.mobile-portrait #orientation-prompt {
     touch-action: manipulation;
 }
 
+#music-toggle {
+    display: none;
+    position: absolute;
+    top: max(44px, calc(env(safe-area-inset-top) + 40px));
+    right: max(14px, env(safe-area-inset-right));
+    z-index: 32;
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 50%;
+    background: rgba(12, 20, 35, 0.68);
+    color: #fff;
+    font-size: 1.1rem;
+    opacity: 0.72;
+    pointer-events: auto;
+    touch-action: manipulation;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    #music-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+}
+
 @media (hover: none) and (pointer: coarse) {
     #mobile-settings-button {
         display: flex;
