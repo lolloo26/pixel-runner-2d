@@ -1094,7 +1094,7 @@ function updateWalls() {
 
         var dist = wall.x - player.x;
 
-        var approachDuration = Math.max(26, Math.min(55, Math.round(100 / game.speed)));
+        var approachDuration = Math.max(34, Math.min(70, Math.round(130 / game.speed)));
         if (dist > 0 && dist <= game.speed * approachDuration + 8 && wall.windowStart < 0) {
             wall.windowStart = 0;
             wall.windowDuration = approachDuration;
