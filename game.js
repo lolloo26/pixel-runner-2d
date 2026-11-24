@@ -635,20 +635,21 @@ var music = (function() {
         }
     }
 
-    function unlock() {
+    function unlock(retry) {
         if (!unlocked) {
             prepareAudioGraph();
             unlocked = true;
-            if (context && context.state !== 'running') {
-                context.resume().catch(function(error) {
-                    unlocked = false;
-                    showAudioError(error && error.name === 'NotAllowedError' ?
-                        'Tocca di nuovo per avviare la musica' :
-                        'Impossibile avviare l’audio del browser');
-                });
-            }
+        }
+        if (context && context.state !== 'running') {
+            context.resume().catch(function(error) {
+                unlocked = false;
+                showAudioError(error && error.name === 'NotAllowedError' ?
+                    'Tocca di nuovo per avviare la musica' :
+                    'Impossibile avviare l’audio del browser');
+            });
         }
         if (currentIndex < 0) currentIndex = 0;
+        if (retry && tracks[currentIndex].audio.paused) tracks[currentIndex].active = false;
         if (enabled && !paused) setBiome(currentIndex);
     }
 
@@ -716,7 +717,7 @@ function toggleAudio() {
 }
 
 function unlockMusic() {
-    music.unlock();
+    music.unlock(true);
 }
 
 function updateOrientationState() {
@@ -1163,7 +1164,7 @@ function initializeRun(attractMode) {
 }
 
 function startGame() {
-    music.unlock();
+    music.unlock(true);
     requestMobilePresentation();
     initializeRun(false);
     updateOrientationState();
@@ -2455,6 +2456,7 @@ document.addEventListener('pointerdown', function firstMobileTouch() {
 }, { once: true });
 
 document.addEventListener('pointerdown', unlockMusic, { capture: true });
+document.addEventListener('click', unlockMusic, { capture: true });
 document.addEventListener('keydown', unlockMusic);
 ui.audioToggle.onclick = toggleAudio;
 ui.musicToggle.onclick = toggleAudio;
