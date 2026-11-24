@@ -32,10 +32,12 @@ var mobilePresentationRequested = false;
 
 function scaleCanvas() {
     var viewport = window.visualViewport;
-    var cw = viewport ? viewport.width : window.innerWidth;
-    var ch = viewport ? viewport.height : window.innerHeight;
+    var cw = viewport && viewport.width ? viewport.width : window.innerWidth;
+    var ch = viewport && viewport.height ? viewport.height : window.innerHeight;
     var previousWidth = W;
     var previousGround = GROUND_Y;
+    document.documentElement.style.setProperty('--viewport-width', cw + 'px');
+    document.documentElement.style.setProperty('--viewport-height', ch + 'px');
     var baseHeight = isMobileTouch() && cw >= ch ? 150 : 180;
     if (cw / ch >= 16 / 9) {
         H = baseHeight;
@@ -66,9 +68,44 @@ function scaleCanvas() {
 
 function canvasPoint(clientX, clientY) {
     var rect = canvas.getBoundingClientRect();
+    var canvasStyle = getComputedStyle(canvas);
+    var width = parseFloat(canvasStyle.width) || rect.width;
+    var height = parseFloat(canvasStyle.height) || rect.height;
+    var quads = canvas.getBoxQuads ? canvas.getBoxQuads({ box: 'content' }) : null;
+    if (quads && quads.length > 0) {
+        var quad = quads[0];
+        var ux = quad.p2.x - quad.p1.x;
+        var uy = quad.p2.y - quad.p1.y;
+        var vx = quad.p4.x - quad.p1.x;
+        var vy = quad.p4.y - quad.p1.y;
+        var determinant = ux * vy - uy * vx;
+        if (Math.abs(determinant) > 0.0001) {
+            var dx = clientX - quad.p1.x;
+            var dy = clientY - quad.p1.y;
+            var localX = (dx * vy - dy * vx) / determinant;
+            var localY = (ux * dy - uy * dx) / determinant;
+            return { x: localX * W, y: localY * H };
+        }
+    }
+
+    var containerTransform = getComputedStyle(gameContainer).transform;
+    var Matrix = window.DOMMatrix || window.WebKitCSSMatrix;
+    if (containerTransform !== 'none' && Matrix) {
+        var containerRect = gameContainer.getBoundingClientRect();
+        var inverse = new Matrix(containerTransform).inverse();
+        var dx = clientX - (containerRect.left + containerRect.width / 2);
+        var dy = clientY - (containerRect.top + containerRect.height / 2);
+        var localX = gameContainer.clientWidth / 2 + inverse.a * dx + inverse.c * dy;
+        var localY = gameContainer.clientHeight / 2 + inverse.b * dx + inverse.d * dy;
+        return {
+            x: (localX - canvas.offsetLeft) * W / Math.max(1, width),
+            y: (localY - canvas.offsetTop) * H / Math.max(1, height)
+        };
+    }
+
     return {
-        x: (clientX - rect.left) * W / Math.max(1, rect.width),
-        y: (clientY - rect.top) * H / Math.max(1, rect.height)
+        x: (clientX - rect.left) * W / Math.max(1, width),
+        y: (clientY - rect.top) * H / Math.max(1, height)
     };
 }
 
@@ -399,8 +436,8 @@ var game = {
 
 function updateOrientationState() {
     var viewport = window.visualViewport;
-    var width = viewport ? viewport.width : window.innerWidth;
-    var height = viewport ? viewport.height : window.innerHeight;
+    var width = viewport && viewport.width ? viewport.width : window.innerWidth;
+    var height = viewport && viewport.height ? viewport.height : window.innerHeight;
     var portrait = isMobileTouch() && height > width;
     var orientationChanged = portrait !== previousPortraitState;
     previousPortraitState = portrait;
@@ -408,16 +445,14 @@ function updateOrientationState() {
 
     if (orientationChanged) {
         keys = {};
-        pointerStart = null;
-        duckPointerId = null;
+        clearTouchInputs();
     }
 
     if (portrait && game.running && !game.paused) {
         game.paused = true;
         orientationPaused = true;
         keys = {};
-        pointerStart = null;
-        duckPointerId = null;
+        clearTouchInputs();
     } else if (!portrait && orientationPaused) {
         orientationPaused = false;
         game.paused = false;
@@ -455,12 +490,26 @@ var particles = [];
 var atmParticles = [];
 var bgLayers = { far: [], mid: [], stars: [] };
 var loopActive = false;
-var pointerStart = null;
+var pointerStarts = Object.create(null);
+var touchJumpPointers = Object.create(null);
+var touchDownPointers = Object.create(null);
+var duckPointers = Object.create(null);
 var orientationPaused = false;
 var previousPortraitState = false;
 var hitFeedbackTimer = 0;
 var targetHitRadius = 17;
 var displayedScore = -1;
+
+function clearTouchInputs() {
+    pointerStarts = Object.create(null);
+    touchJumpPointers = Object.create(null);
+    touchDownPointers = Object.create(null);
+    duckPointers = Object.create(null);
+}
+
+function hasActivePointers(pointers) {
+    return Object.keys(pointers).length > 0;
+}
 
 function rgb(arr) {
     return 'rgb(' + arr[0] + ',' + arr[1] + ',' + arr[2] + ')';
@@ -801,6 +850,7 @@ function initializeRun(attractMode) {
     walls = [];
     particles = [];
     keys = {};
+    clearTouchInputs();
     initBgElements();
 
     ui.over.classList.add('hidden');
@@ -923,8 +973,7 @@ function pauseGame() {
     if (!game.running || game.attractMode || game.paused) return;
     game.paused = true;
     keys = {};
-    pointerStart = null;
-    duckPointerId = null;
+    clearTouchInputs();
     ui.duck.classList.remove('active');
     ui.pause.classList.remove('hidden');
 }
@@ -934,8 +983,7 @@ function resumeGame() {
     if (orientationPaused) return;
     game.paused = false;
     keys = {};
-    pointerStart = null;
-    duckPointerId = null;
+    clearTouchInputs();
     ui.pause.classList.add('hidden');
     ui.mobileSettings.classList.add('hidden');
     ui.commands.classList.add('hidden');
@@ -1133,7 +1181,7 @@ function updatePlayer() {
         keys.ArrowDown = game.autoCrouch;
     }
 
-    var jumpInput = keys['Space'] || keys['ArrowUp'] || keys['KeyW'] || player.jumpBuffer > 0;
+    var jumpInput = keys['Space'] || keys['ArrowUp'] || keys['KeyW'] || hasActivePointers(touchJumpPointers) || player.jumpBuffer > 0;
     if (player.jumpBuffer > 0) player.jumpBuffer--;
     if (jumpInput) {
         if (player.grounded) {
@@ -1149,7 +1197,7 @@ function updatePlayer() {
         player.jumpHeld = false;
     }
 
-    var downInput = keys['ArrowDown'] || keys['KeyS'];
+    var downInput = keys['ArrowDown'] || keys['KeyS'] || hasActivePointers(touchDownPointers);
     if (downInput) {
         player.crouching = player.grounded;
         if (!player.grounded) {
@@ -1182,7 +1230,18 @@ function updatePlayer() {
 }
 
 function updateObstacles() {
-    if (game.biomeTransitionTimer <= 0) {
+    var upcomingWall = null;
+    for (var i = 0; i < walls.length; i++) {
+        if (!walls[i].destroyed) {
+            upcomingWall = walls[i];
+            break;
+        }
+    }
+
+    var wallSafetyActive = !!upcomingWall &&
+        upcomingWall.x - (player.x + player.w) <= getWallSafetyDistance();
+
+    if (game.biomeTransitionTimer <= 0 && !wallSafetyActive) {
         game.lastObstacle++;
         var gapDistance = Math.max(110, 190 - Math.min(55, game.score * 0.06));
         var minGap = Math.max(18, gapDistance / game.speed);
@@ -1190,6 +1249,14 @@ function updateObstacles() {
             spawnObstacle();
             game.lastObstacle = 0;
         }
+    }
+
+    if (wallSafetyActive) {
+        var clearUntil = upcomingWall.x + upcomingWall.w + game.speed * 30;
+        obstacles = obstacles.filter(function(o) {
+            return o.x + o.w < player.x - 4 || o.x > clearUntil;
+        });
+        game.lastObstacle = 0;
     }
 
     for (var i = obstacles.length - 1; i >= 0; i--) {
@@ -1242,6 +1309,14 @@ function updateCoins() {
             coins.splice(i, 1);
         }
     }
+}
+
+function getWallApproachDuration() {
+    return Math.max(34, Math.min(70, Math.round(130 / game.speed)));
+}
+
+function getWallSafetyDistance() {
+    return game.speed * (getWallApproachDuration() + 30) + 30;
 }
 
 var BIOME_TRANSITION_DURATION = 2400;
@@ -1358,7 +1433,7 @@ function updateWalls() {
 
         var dist = wall.x - player.x;
 
-        var approachDuration = Math.max(34, Math.min(70, Math.round(130 / game.speed)));
+        var approachDuration = getWallApproachDuration();
         if (dist > 0 && dist <= game.speed * approachDuration + 8 && wall.windowStart < 0) {
             wall.windowStart = 0;
             wall.windowDuration = approachDuration;
@@ -1929,52 +2004,49 @@ canvas.addEventListener('pointerdown', function(e) {
     if (!game.running || game.attractMode || (e.pointerType === 'mouse' && e.button !== 0)) return;
     e.preventDefault();
     requestMobilePresentation();
-    var wall = activeTimingWall();
-    if (wall) return;
     var point = canvasPoint(e.clientX, e.clientY);
     var rect = canvas.getBoundingClientRect();
-    pointerStart = {
-        id: e.pointerId,
+    pointerStarts[e.pointerId] = {
         x: point.x,
         y: point.y,
         swipeThreshold: 24 * H / Math.max(1, rect.height),
         swiped: false
     };
+    touchJumpPointers[e.pointerId] = true;
     player.jumpBuffer = 4;
-    keys.Space = true;
     if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
 });
 
 canvas.addEventListener('pointermove', function(e) {
-    if (!pointerStart || pointerStart.id !== e.pointerId || pointerStart.swiped) return;
+    var pointer = pointerStarts[e.pointerId];
+    if (!pointer || pointer.swiped) return;
     var point = canvasPoint(e.clientX, e.clientY);
-    if (point.y - pointerStart.y > pointerStart.swipeThreshold) {
-        pointerStart.swiped = true;
-        keys.Space = false;
-        keys.ArrowDown = true;
+    if (point.y - pointer.y > pointer.swipeThreshold) {
+        pointer.swiped = true;
+        delete touchJumpPointers[e.pointerId];
+        touchDownPointers[e.pointerId] = true;
         if (!player.grounded) player.vy = Math.max(player.vy, 2);
     }
 });
 
 function endPointer(e) {
-    if (pointerStart && pointerStart.id === e.pointerId) {
-        keys.Space = false;
-        if (pointerStart.swiped) keys.ArrowDown = false;
-        pointerStart = null;
+    var pointer = pointerStarts[e.pointerId];
+    if (pointer) {
+        delete pointerStarts[e.pointerId];
+        delete touchJumpPointers[e.pointerId];
+        if (pointer.swiped) delete touchDownPointers[e.pointerId];
     }
-    if (duckPointerId === e.pointerId) {
-        keys.ArrowDown = false;
-        duckPointerId = null;
+    if (duckPointers[e.pointerId]) {
+        delete duckPointers[e.pointerId];
+        delete touchDownPointers[e.pointerId];
     }
 }
 
-var duckPointerId = null;
 window.addEventListener('pointerup', endPointer);
 window.addEventListener('pointercancel', endPointer);
 window.addEventListener('blur', function() {
     keys = {};
-    pointerStart = null;
-    duckPointerId = null;
+    clearTouchInputs();
 });
 window.addEventListener('resize', updateOrientationState);
 window.addEventListener('orientationchange', function() {
@@ -1997,8 +2069,8 @@ ui.duck.addEventListener('pointerdown', function(e) {
     e.preventDefault();
     e.stopPropagation();
     requestMobilePresentation();
-    duckPointerId = e.pointerId;
-    keys.ArrowDown = true;
+    duckPointers[e.pointerId] = true;
+    touchDownPointers[e.pointerId] = true;
     if (ui.duck.setPointerCapture) ui.duck.setPointerCapture(e.pointerId);
 });
 
