@@ -1046,12 +1046,6 @@ function activeTimingWall() {
 function attemptWallHit(wall) {
     if (!wall || wall.destroyed || wall.windowStart < 0) return false;
     var progress = wall.windowStart / wall.windowDuration;
-    if (progress < 0.84 || progress > 0.98) {
-        game.screenShake = 11;
-        gameOver();
-        return false;
-    }
-
     wall.destroyed = true;
     wall.flashTimer = 0;
     ui.target.classList.add('hidden');
@@ -1060,7 +1054,7 @@ function attemptWallHit(wall) {
     game.flashAlpha = 0.6;
     game.screenShake = 5;
     if (!game.attractMode) {
-        ui.prompt.textContent = progress >= 0.88 ? 'PERFECT!' : 'GREAT!';
+        ui.prompt.textContent = progress >= 0.92 ? 'PERFECT!' : 'GREAT!';
         ui.prompt.classList.add('hit-good');
         ui.prompt.classList.remove('hidden');
         hitFeedbackTimer = 45;
@@ -1592,10 +1586,7 @@ canvas.addEventListener('pointerdown', function(e) {
     if (!game.running || game.attractMode || (e.pointerType === 'mouse' && e.button !== 0)) return;
     e.preventDefault();
     var wall = activeTimingWall();
-    if (wall) {
-        attemptWallHit(wall);
-        return;
-    }
+    if (wall) return;
     pointerStart = { id: e.pointerId, x: e.clientX, y: e.clientY, swiped: false };
     player.jumpBuffer = 4;
     keys.Space = true;
