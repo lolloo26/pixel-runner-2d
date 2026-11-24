@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pixel Runner 2D</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        
+        <div id="ui-overlay">
+            <div id="main-menu" class="overlay-screen">
+                <h1>PIXEL RUNNER</h1>
+                <button id="start-btn">GIOCA</button>
+                <button id="shop-btn">NEGOZIO</button>
+                <div id="main-highscore">RECORD: 0</div>
+            </div>
+
+            <div id="game-ui" class="hidden">
+                <div id="score-container">
+                    <div id="current-score">0</div>
+                    <div id="coin-count">💰 0</div>
+                </div>
+                <div id="biome-indicator">GIUNGLA</div>
+                <div id="timing-prompt" class="hidden">PREMI [E]!</div>
+            </div>
+
+            <div id="game-over" class="overlay-screen hidden">
+                <h2>GAME OVER</h2>
+                <div id="final-score">PUNTI: 0</div>
+                <div id="new-record" class="hidden">NUOVO RECORD!</div>
+                <button id="restart-btn">RIPROVA</button>
+                <button id="menu-btn">MENU</button>
+            </div>
+
+            <div id="shop-menu" class="overlay-screen hidden">
+                <h2>NEGOZIO</h2>
+                <div id="shop-coins">💰 0</div>
+                <div id="skin-selector">
+                    <!-- Skins will be generated here -->
+                </div>
+                <button id="buy-chest-btn">APRI BAULE (50 💰)</button>
+                <button id="back-btn">INDIETRO</button>
+            </div>
+
+            <div id="chest-animation" class="overlay-screen hidden">
+                <div id="chest-box"></div>
+                <div id="unlock-msg" class="hidden"></div>
+            </div>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
