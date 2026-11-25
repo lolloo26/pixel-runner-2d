@@ -31,6 +31,8 @@
                     <div class="menu-actions">
                         <button id="start-btn" class="primary-button">GIOCA</button>
                         <button id="levels-btn">LIVELLI</button>
+                        <button id="missions-btn">MISSIONI</button>
+                        <button id="daily-challenge-btn">SFIDA GIORNALIERA</button>
                         <button id="shop-btn">NEGOZIO</button>
                         <button id="main-controls-btn">COMANDI</button>
                     </div>
@@ -47,8 +49,45 @@
                 </section>
             </div>
 
+            <div id="missions-menu" class="overlay-screen hidden">
+                <section id="missions-panel" class="glass-panel">
+                    <div class="menu-eyebrow">OBIETTIVI E RICOMPENSE</div>
+                    <h2>MISSIONI</h2>
+                    <div class="mission-tabs" role="tablist">
+                        <button id="mission-daily-tab" class="mission-tab active" type="button" role="tab" aria-selected="true">GIORNALIERE</button>
+                        <button id="mission-achievement-tab" class="mission-tab" type="button" role="tab" aria-selected="false">ACHIEVEMENT</button>
+                    </div>
+                    <section id="daily-mission-section" class="mission-section" role="tabpanel">
+                        <div class="mission-section-heading">Si rinnovano ogni giorno · <span id="mission-date"></span></div>
+                        <div id="daily-mission-list" class="mission-card-list"></div>
+                    </section>
+                    <section id="achievement-section" class="mission-section hidden" role="tabpanel">
+                        <div class="mission-section-heading">Obiettivi permanenti</div>
+                        <div id="achievement-list" class="mission-card-list"></div>
+                    </section>
+                    <button id="missions-back-btn" type="button">MENU PRINCIPALE</button>
+                </section>
+            </div>
+
+            <div id="daily-challenge-menu" class="overlay-screen hidden">
+                <section id="daily-challenge-panel" class="glass-panel">
+                    <div class="menu-eyebrow">STESSO PERCORSO PER TUTTI</div>
+                    <h2>SFIDA GIORNALIERA</h2>
+                    <div id="daily-date"></div>
+                    <div id="daily-best"></div>
+                    <div id="daily-bonus-status"></div>
+                    <p class="daily-challenge-description">Raggiungi 1.000 metri per ottenere il bonus giornaliero di 100 monete.</p>
+                    <div class="daily-challenge-actions">
+                        <button id="daily-challenge-start-btn" class="primary-button" type="button">GIOCA LA SFIDA</button>
+                        <button id="daily-challenge-back-btn" type="button">MENU PRINCIPALE</button>
+                    </div>
+                </section>
+            </div>
+
             <div id="game-ui" class="hidden">
                 <div id="current-score" class="score-value">0</div>
+                <div id="combo-indicator" class="hidden" aria-live="polite"></div>
+                <div id="daily-run-label" class="hidden"></div>
                 <div id="level-progress" class="hidden" role="progressbar" aria-label="Progresso livello Giungla" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div class="level-progress-heading"><span>GIUNGLA</span><span id="level-progress-value">0%</span></div>
                     <div class="level-progress-track"><div id="level-progress-fill"></div></div>
@@ -69,6 +108,7 @@
             <button id="music-toggle" aria-label="Disattiva musica" aria-pressed="true" title="Disattiva musica"><span aria-hidden="true">🔊</span></button>
             <div id="audio-status" class="hidden" role="status" aria-live="polite"></div>
             <div id="timing-prompt" class="hidden">TOCCA IL BERSAGLIO A TEMPO</div>
+            <div id="game-toast" class="hidden" role="status" aria-live="polite"></div>
             <button id="wall-hit-target" class="hidden" aria-label="Colpisci la parete">HIT</button>
             <div id="biome-transition" class="hidden" aria-hidden="true">
                 <div id="biome-transition-effects"><div id="biome-particles"></div></div>

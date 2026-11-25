@@ -398,6 +398,19 @@ var ui = {
     levelSelect:  document.getElementById('level-select-menu'),
     levelCards:   document.getElementById('level-card-list'),
     levelSelectCoins: document.getElementById('level-select-coins'),
+    missions: document.getElementById('missions-menu'),
+    missionList: document.getElementById('daily-mission-list'),
+    achievementList: document.getElementById('achievement-list'),
+    missionDailyTab: document.getElementById('mission-daily-tab'),
+    missionAchievementTab: document.getElementById('mission-achievement-tab'),
+    missionDailySection: document.getElementById('daily-mission-section'),
+    missionAchievementSection: document.getElementById('achievement-section'),
+    missionDate: document.getElementById('mission-date'),
+    dailyMenu: document.getElementById('daily-challenge-menu'),
+    dailyDate: document.getElementById('daily-date'),
+    dailyBest: document.getElementById('daily-best'),
+    dailyBonusStatus: document.getElementById('daily-bonus-status'),
+    toast: document.getElementById('game-toast'),
     game:         document.getElementById('game-ui'),
     levelProgress: document.getElementById('level-progress'),
     levelProgressFill: document.getElementById('level-progress-fill'),
@@ -428,6 +441,8 @@ var ui = {
     biomeTitle:   document.getElementById('biome-title'),
     biomeParticles: document.getElementById('biome-particles'),
     score:        document.getElementById('current-score'),
+    combo: document.getElementById('combo-indicator'),
+    dailyRunLabel: document.getElementById('daily-run-label'),
     overTitle:    document.querySelector('#game-over h2'),
     target:       document.getElementById('wall-hit-target'),
     coinCount:    document.getElementById('coin-count'),
@@ -461,6 +476,127 @@ function persist() {
     localStorage.setItem('pr_skins',      JSON.stringify(save.skins));
     localStorage.setItem('pr_active_skin',save.activeSkin);
     localStorage.setItem('pr_audio_enabled', save.audioEnabled);
+}
+
+var DAILY_MISSION_KEY = 'pr_daily_missions';
+var ACHIEVEMENT_KEY = 'pr_achievements';
+var DAILY_CHALLENGE_KEY = 'pr_daily_challenge';
+var DAILY_BONUS_DISTANCE = 1000;
+var DAILY_BONUS_COINS = 100;
+var DAILY_MISSION_DEFS = [
+    { id: 'coins', title: 'Raccogli 50 monete', goal: 50, reward: 120 },
+    { id: 'perfectWalls', title: 'Distruggi 5 muri con PERFECT', goal: 5, reward: 180 },
+    { id: 'volcano', title: 'Raggiungi il bioma Vulcano in Infinita', goal: 1, reward: 220 }
+];
+var ACHIEVEMENT_DEFS = [
+    { id: 'firstVictory', title: 'Prima Vittoria', description: 'Completa un livello', goal: 1, reward: 250 },
+    { id: 'starCollector', title: 'Collezionista di Stelle', description: 'Raccogli tutte le 12 stelle', goal: 12, reward: 450 },
+    { id: 'bossHunter', title: 'Cacciatore di Boss', description: 'Sconfiggi tutti e 4 i Boss', goal: 4, reward: 500 },
+    { id: 'unboxer', title: 'Unboxer Seriale', description: 'Apri 10 bauli', goal: 10, reward: 300 },
+    { id: 'distance', title: '10.000 metri percorsi', description: 'Corri per 10.000 metri complessivi', goal: 10000, reward: 400 }
+];
+
+function localDateKey() {
+    var date = new Date();
+    return date.getFullYear() + '-' + ('0' + (date.getMonth() + 1)).slice(-2) + '-' +
+        ('0' + date.getDate()).slice(-2);
+}
+
+function dailyChallengeDateKey() {
+    return new Date().toISOString().slice(0, 10);
+}
+
+function readStoredObject(key) {
+    var stored = localStorage.getItem(key);
+    if (!stored) return null;
+    try {
+        return JSON.parse(stored);
+    } catch (error) {
+        console.error('Dati non validi in localStorage:', key, error);
+        return null;
+    }
+}
+
+function createDailyMissionState(date) {
+    var missions = {};
+    for (var i = 0; i < DAILY_MISSION_DEFS.length; i++) {
+        missions[DAILY_MISSION_DEFS[i].id] = { progress: 0, claimed: false };
+    }
+    return { date: date, missions: missions };
+}
+
+function loadDailyMissionState() {
+    var date = localDateKey();
+    var parsed = readStoredObject(DAILY_MISSION_KEY);
+    if (!parsed || parsed.date !== date || !parsed.missions || typeof parsed.missions !== 'object') {
+        return createDailyMissionState(date);
+    }
+    var state = createDailyMissionState(date);
+    for (var i = 0; i < DAILY_MISSION_DEFS.length; i++) {
+        var id = DAILY_MISSION_DEFS[i].id;
+        var saved = parsed.missions[id];
+        if (!saved || typeof saved !== 'object') continue;
+        state.missions[id].progress = Number.isFinite(saved.progress) ? Math.max(0, saved.progress) : 0;
+        state.missions[id].claimed = saved.claimed === true;
+    }
+    return state;
+}
+
+function createAchievementState() {
+    return { unlocked: {}, bosses: [], chestOpens: 0, distance: 0 };
+}
+
+function loadAchievementState() {
+    var parsed = readStoredObject(ACHIEVEMENT_KEY);
+    if (!parsed || typeof parsed !== 'object') return createAchievementState();
+    var state = createAchievementState();
+    if (parsed.unlocked && typeof parsed.unlocked === 'object') {
+        for (var i = 0; i < ACHIEVEMENT_DEFS.length; i++) {
+            var id = ACHIEVEMENT_DEFS[i].id;
+            if (parsed.unlocked[id] === true) state.unlocked[id] = true;
+        }
+    }
+    if (Array.isArray(parsed.bosses)) {
+        for (var j = 0; j < parsed.bosses.length; j++) {
+            var bossId = parsed.bosses[j];
+            if (LEVEL_IDS.indexOf(bossId) >= 0 && state.bosses.indexOf(bossId) < 0) state.bosses.push(bossId);
+        }
+    }
+    state.chestOpens = Number.isInteger(parsed.chestOpens) && parsed.chestOpens >= 0 ? parsed.chestOpens : 0;
+    state.distance = Number.isFinite(parsed.distance) && parsed.distance >= 0 ? parsed.distance : 0;
+    return state;
+}
+
+function createDailyChallengeState(date) {
+    return { date: date, bestScore: 0, bestDistance: 0, bonusClaimed: false };
+}
+
+function loadDailyChallengeState() {
+    var date = dailyChallengeDateKey();
+    var parsed = readStoredObject(DAILY_CHALLENGE_KEY);
+    if (!parsed || parsed.date !== date) return createDailyChallengeState(date);
+    return {
+        date: date,
+        bestScore: Number.isFinite(parsed.bestScore) ? Math.max(0, parsed.bestScore) : 0,
+        bestDistance: Number.isFinite(parsed.bestDistance) ? Math.max(0, parsed.bestDistance) : 0,
+        bonusClaimed: parsed.bonusClaimed === true
+    };
+}
+
+var dailyMissionState = loadDailyMissionState();
+var achievementState = loadAchievementState();
+var dailyChallengeState = loadDailyChallengeState();
+
+function persistDailyMissionState() {
+    localStorage.setItem(DAILY_MISSION_KEY, JSON.stringify(dailyMissionState));
+}
+
+function persistAchievementState() {
+    localStorage.setItem(ACHIEVEMENT_KEY, JSON.stringify(achievementState));
+}
+
+function persistDailyChallengeState() {
+    localStorage.setItem(DAILY_CHALLENGE_KEY, JSON.stringify(dailyChallengeState));
 }
 
 function createDefaultLevelProgress() {
@@ -597,6 +733,17 @@ var game = {
     levelAccumulator: 0,
     bossPending: false,
     boss: null,
+    dailyChallenge: false,
+    dailyDate: '',
+    dailySpawnState: 0,
+    dailyTargetState: 0,
+    dailyNextObstacleDistance: 0,
+    dailyNextWallDistance: 0,
+    dailyBonusAwarded: 0,
+    runDistance: 0,
+    lastDistanceCheckpoint: 0,
+    comboMultiplier: 1,
+    pendingFailTimer: 0,
     score: 0,
     sessionCoins: 0,
     speed: 1.2,
@@ -618,6 +765,213 @@ var game = {
     autoJump: false,
     autoCrouch: false
 };
+
+var toastTimer = 0;
+
+function showToast(message) {
+    if (!ui.toast) return;
+    ui.toast.textContent = message;
+    ui.toast.classList.remove('hidden');
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function() {
+        ui.toast.classList.add('hidden');
+    }, 2800);
+}
+
+function refreshDailyMissionDate() {
+    var date = localDateKey();
+    if (dailyMissionState.date !== date) {
+        dailyMissionState = createDailyMissionState(date);
+        persistDailyMissionState();
+    }
+}
+
+function refreshDailyChallengeDate() {
+    var date = dailyChallengeDateKey();
+    if (dailyChallengeState.date !== date) {
+        dailyChallengeState = createDailyChallengeState(date);
+        persistDailyChallengeState();
+    }
+}
+
+function recordDailyMissionProgress(id, amount) {
+    if (game.attractMode || amount <= 0) return;
+    refreshDailyMissionDate();
+    var definition = null;
+    for (var i = 0; i < DAILY_MISSION_DEFS.length; i++) {
+        if (DAILY_MISSION_DEFS[i].id === id) definition = DAILY_MISSION_DEFS[i];
+    }
+    if (!definition) return;
+    var mission = dailyMissionState.missions[id];
+    if (!mission || mission.claimed) return;
+    var before = mission.progress;
+    mission.progress = Math.min(definition.goal, mission.progress + amount);
+    if (before < definition.goal && mission.progress >= definition.goal) {
+        showToast('MISSIONE COMPLETATA: ' + definition.title);
+    }
+    persistDailyMissionState();
+    if (ui.missions && !ui.missions.classList.contains('hidden')) renderMissions();
+}
+
+function claimDailyMission(id) {
+    refreshDailyMissionDate();
+    var definition = null;
+    for (var i = 0; i < DAILY_MISSION_DEFS.length; i++) {
+        if (DAILY_MISSION_DEFS[i].id === id) definition = DAILY_MISSION_DEFS[i];
+    }
+    if (!definition) return;
+    var mission = dailyMissionState.missions[id];
+    if (!mission || mission.claimed || mission.progress < definition.goal) return;
+    mission.claimed = true;
+    save.coins += definition.reward;
+    persistDailyMissionState();
+    persist();
+    showToast('RICOMPENSA RISCATTATA: +' + definition.reward + ' monete');
+    renderMissions();
+}
+
+function achievementProgress(id) {
+    if (id === 'firstVictory') {
+        for (var i = 0; i < LEVEL_IDS.length; i++) {
+            if (levelProgress.levels[LEVEL_IDS[i]].completed) return 1;
+        }
+        return 0;
+    }
+    if (id === 'starCollector') return getCollectedStarCount();
+    if (id === 'bossHunter') return achievementState.bosses.length;
+    if (id === 'unboxer') return achievementState.chestOpens;
+    if (id === 'distance') return Math.floor(achievementState.distance + game.runDistance);
+    return 0;
+}
+
+function unlockAchievement(id) {
+    if (achievementState.unlocked[id]) return;
+    var definition = null;
+    for (var i = 0; i < ACHIEVEMENT_DEFS.length; i++) {
+        if (ACHIEVEMENT_DEFS[i].id === id) definition = ACHIEVEMENT_DEFS[i];
+    }
+    if (!definition) return;
+    achievementState.unlocked[id] = true;
+    save.coins += definition.reward;
+    persistAchievementState();
+    persist();
+    showToast('ACHIEVEMENT: ' + definition.title + ' · +' + definition.reward + ' monete');
+    if (ui.missions && !ui.missions.classList.contains('hidden')) renderMissions();
+}
+
+function checkAchievement(id) {
+    var definition = null;
+    for (var i = 0; i < ACHIEVEMENT_DEFS.length; i++) {
+        if (ACHIEVEMENT_DEFS[i].id === id) definition = ACHIEVEMENT_DEFS[i];
+    }
+    if (definition && achievementProgress(id) >= definition.goal) unlockAchievement(id);
+}
+
+function recordBossVictory(levelId) {
+    if (achievementState.bosses.indexOf(levelId) < 0) {
+        achievementState.bosses.push(levelId);
+        persistAchievementState();
+    }
+    checkAchievement('bossHunter');
+}
+
+function recordChestOpening() {
+    achievementState.chestOpens++;
+    persistAchievementState();
+    checkAchievement('unboxer');
+}
+
+function updateComboHud() {
+    if (!ui.combo) return;
+    ui.combo.textContent = 'x' + game.comboMultiplier;
+    ui.combo.classList.toggle('hidden', !game.running || game.comboMultiplier <= 1);
+}
+
+function showTimingFeedback(judgment) {
+    if (game.attractMode) return;
+    var labels = { perfect: 'PERFECT!', good: 'GOOD!', miss: 'MISS' };
+    ui.prompt.textContent = labels[judgment];
+    ui.prompt.classList.remove('hit-perfect', 'hit-good', 'hit-miss', 'hidden');
+    ui.prompt.classList.add('hit-' + judgment);
+    hitFeedbackTimer = judgment === 'miss' ? 45 : 40;
+}
+
+function registerTimingJudgment(judgment, suppressSfx) {
+    if (judgment === 'perfect') {
+        game.comboMultiplier = Math.min(5, game.comboMultiplier + 1);
+        if (!suppressSfx) music.playSfx('perfect');
+    } else if (judgment === 'good') {
+        if (!suppressSfx) music.playSfx('good');
+    } else {
+        game.comboMultiplier = 1;
+        if (!suppressSfx) music.playSfx('miss');
+    }
+    updateComboHud();
+    showTimingFeedback(judgment);
+}
+
+function timingJudgment(progress) {
+    if (progress >= 0.94 && progress <= 1.04) return 'perfect';
+    if ((progress >= 0.72 && progress < 0.94) || (progress > 1.04 && progress <= 1.12)) return 'good';
+    return 'miss';
+}
+
+function timingGraceFrames(duration) {
+    return Math.max(3, Math.ceil(duration * 0.12));
+}
+
+function applyDailyChallengeDistanceReward() {
+    if (!game.dailyChallenge || game.dailyBonusAwarded || game.runDistance < DAILY_BONUS_DISTANCE) return;
+    refreshDailyChallengeDate();
+    if (dailyChallengeState.date !== game.dailyDate || dailyChallengeState.bonusClaimed) return;
+    dailyChallengeState.bonusClaimed = true;
+    game.dailyBonusAwarded = DAILY_BONUS_COINS;
+    game.sessionCoins += DAILY_BONUS_COINS;
+    save.coins += DAILY_BONUS_COINS;
+    persistDailyChallengeState();
+    persist();
+    showToast('TRAGUARDO GIORNALIERO: +' + DAILY_BONUS_COINS + ' monete');
+}
+
+function seededRandom(stream) {
+    if (stream === 'target') {
+        game.dailyTargetState = (Math.imul(game.dailyTargetState, 1664525) + 1013904223) >>> 0;
+        return game.dailyTargetState / 4294967296;
+    }
+    game.dailySpawnState = (Math.imul(game.dailySpawnState, 1664525) + 1013904223) >>> 0;
+    return game.dailySpawnState / 4294967296;
+}
+
+function hashDailySeed(date) {
+    var hash = 2166136261;
+    for (var i = 0; i < date.length; i++) {
+        hash ^= date.charCodeAt(i);
+        hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return hash || 1831565813;
+}
+
+function spawnRandom() {
+    return game.dailyChallenge ? seededRandom('spawn') : Math.random();
+}
+
+function spawnRandInt(min, max) {
+    return game.dailyChallenge ? min + Math.floor(spawnRandom() * (max - min + 1)) : randInt(min, max);
+}
+
+function advanceDailyObstacleSchedule() {
+    game.dailyNextObstacleDistance += 150 + Math.floor(spawnRandom() * 81);
+}
+
+function isDailyWallSafetyZone(distance) {
+    var previousWall = game.dailyNextWallDistance - 650;
+    return Math.abs(distance - game.dailyNextWallDistance) < 170 ||
+        (previousWall >= 0 && Math.abs(distance - previousWall) < 170);
+}
+
+function targetRandom() {
+    return game.dailyChallenge ? seededRandom('target') : Math.random();
+}
 
 var music = (function() {
     var paths = [
@@ -886,6 +1240,13 @@ var music = (function() {
                 playTone(1240, 1560, now + 0.025, 0.2, 'sine', 0.09);
                 playTone(1860, 2200, now + 0.09, 0.18, 'sine', 0.065);
             }
+        } else if (type === 'perfect') {
+            playTone(620, 930, now, 0.12, 'triangle', 0.11);
+            playTone(1240, 1860, now + 0.035, 0.16, 'sine', 0.075);
+        } else if (type === 'good') {
+            playTone(460, 620, now, 0.1, 'sine', 0.07);
+        } else if (type === 'miss') {
+            playTone(180, 90, now, 0.13, 'triangle', 0.095);
         } else if (type === 'chestStart') {
             playTone(240, 680, now, 0.24, 'triangle', 0.13);
             playTone(420, 820, now + 0.08, 0.2, 'sine', 0.08);
@@ -1554,11 +1915,11 @@ function drawOutlinedSprite(sx, sy, matrix, colorMap, outlineColor) {
 
 function spawnObstacle() {
     var b = biome();
-    var flying = Math.random() < 0.28;
+    var flying = spawnRandom() < 0.28;
     if (flying) {
-        var fw = randInt(5, 9);
+        var fw = spawnRandInt(5, 9);
         var fh = 4;
-        var fy = GROUND_Y - randInt(16, 28);
+        var fy = GROUND_Y - spawnRandInt(16, 28);
         obstacles.push({
             x: W + 8,
             y: fy,
@@ -1571,9 +1932,9 @@ function spawnObstacle() {
             wingTimer: 0
         });
     } else {
-        var tall = Math.random() < 0.3;
-        var oh = tall ? randInt(10, 16) : randInt(5, 9);
-        var ow = randInt(4, 7);
+        var tall = spawnRandom() < 0.3;
+        var oh = tall ? spawnRandInt(10, 16) : spawnRandInt(5, 9);
+        var ow = spawnRandInt(4, 7);
         obstacles.push({
             x: W + 8,
             y: GROUND_Y - oh,
@@ -1810,6 +2171,7 @@ function collectLevelStar(star) {
     star.collected = true;
     persistLevelProgress();
     syncStarSkinUnlocks();
+    checkAchievement('starCollector');
     music.playSfx('star');
     spawnParticles(star.x + star.w / 2, star.y + star.h / 2, [255, 215, 70], 20);
     spawnParticles(star.x + star.w / 2, star.y + star.h / 2, [255, 249, 183], 8);
@@ -1929,7 +2291,7 @@ function beginBossFight() {
     ui.bossHud.classList.remove('hidden');
     ui.overlay.classList.add('boss-fight-active');
     ui.prompt.textContent = config.name;
-    ui.prompt.classList.remove('hit-good');
+    ui.prompt.classList.remove('hit-perfect', 'hit-good', 'hit-miss');
     ui.prompt.classList.remove('hidden');
     hitFeedbackTimer = 54;
     music.playSfx('bossEnter');
@@ -1980,7 +2342,7 @@ function openBossTarget(boss) {
     boss.attackLane = selectBossAttackLane(boss);
     boss.attackWarning = 22;
     ui.prompt.textContent = boss.attackLane === 'jump' ? 'COLPISCI · SALTA' : 'COLPISCI · SCIVOLA';
-    ui.prompt.classList.remove('hit-good');
+    ui.prompt.classList.remove('hit-perfect', 'hit-good', 'hit-miss');
     ui.prompt.classList.remove('hidden');
     ui.target.textContent = 'HIT';
     ui.target.classList.remove('hidden');
@@ -1995,12 +2357,20 @@ function activeBossTarget() {
 function attemptBossHit() {
     var boss = activeBossTarget();
     if (!boss) return false;
+    var judgment = timingJudgment(boss.targetWindowStart / boss.targetWindowDuration);
     boss.targetActive = false;
-    boss.flashTimer = 12;
     ui.target.classList.add('hidden');
+    registerTimingJudgment(judgment);
+    if (judgment === 'miss') {
+        spawnBossAttack(boss, true);
+        boss.beatCooldown = Math.min(boss.beatCooldown, 24);
+        return true;
+    }
+
+    boss.flashTimer = 12;
     boss.hp = Math.max(0, boss.hp - 1);
-    game.score += 30;
-    game.sessionCoins += 2;
+    game.score += 30 + (judgment === 'perfect' ? 10 * game.comboMultiplier : 4 * game.comboMultiplier);
+    game.sessionCoins += 2 + (judgment === 'perfect' ? game.comboMultiplier : 0);
     game.flashAlpha = 0.36;
     game.screenShake = 4;
     spawnParticles(boss.x + 24, GROUND_Y - 32, boss.palette.highlight, 28);
@@ -2011,11 +2381,13 @@ function attemptBossHit() {
 
     if (boss.hp === 0) {
         boss.defeated = true;
+        recordBossVictory(game.levelData.id);
         boss.defeatTimer = 54;
         boss.attackWarning = 0;
         bossAttacks = [];
         ui.bossAttackLabel.textContent = 'SCONFITTO';
         ui.prompt.textContent = 'BOSS SCONFITTO!';
+        ui.prompt.classList.remove('hit-perfect', 'hit-miss');
         ui.prompt.classList.add('hit-good');
         hitFeedbackTimer = 54;
         spawnParticles(boss.x + 25, GROUND_Y - 32, boss.palette.highlight, 74);
@@ -2024,9 +2396,7 @@ function attemptBossHit() {
         music.playSfx('bossDefeat');
         updateLevelProgress();
     } else {
-        ui.prompt.textContent = 'COLPO!';
-        ui.prompt.classList.add('hit-good');
-        hitFeedbackTimer = 38;
+        hitFeedbackTimer = 40;
     }
     return true;
 }
@@ -2071,12 +2441,10 @@ function updateBoss() {
         var maxApproachScale = boss.targetApproachScale || (1 + 38 / targetHitRadius);
         var approachScale = 1 + (maxApproachScale - 1) * (1 - progress);
         ui.target.style.setProperty('--approach-scale', approachScale.toFixed(3));
-        if (boss.targetWindowStart >= boss.targetWindowDuration) {
+        if (boss.targetWindowStart >= boss.targetWindowDuration + timingGraceFrames(boss.targetWindowDuration)) {
             boss.targetActive = false;
             ui.target.classList.add('hidden');
-            ui.prompt.textContent = 'BERSAGLIO MANCATO';
-            ui.prompt.classList.remove('hit-good');
-            hitFeedbackTimer = 38;
+            registerTimingJudgment('miss');
             spawnBossAttack(boss, true);
             boss.beatCooldown = Math.min(boss.beatCooldown, 24);
         }
@@ -2108,15 +2476,16 @@ function obstaclesOverlapAt(nx, ny, nw, nh) {
 
 function spawnCoinRow() {
     var b = biome();
-    var count = randInt(3, 6);
+    var count = game.dailyChallenge ? 3 + Math.floor(spawnRandom() * 4) : randInt(3, 6);
     var startX = W + 8;
-    var groundRow = Math.random() < 0.5;
+    var groundRow = spawnRandom() < 0.5;
     var rowY;
 
     if (groundRow) {
         rowY = GROUND_Y - 8 - 2;
     } else {
-        var arcH = randInt(14, Math.floor(MAX_JUMP_HEIGHT * 0.75));
+        var maxArc = Math.floor(MAX_JUMP_HEIGHT * 0.75);
+        var arcH = spawnRandInt(14, maxArc);
         rowY = GROUND_Y - PH - arcH;
         if (rowY < 8) rowY = 8;
     }
@@ -2219,19 +2588,37 @@ function resetPlayer() {
     player.fallingInPit = false;
 }
 
-function initializeRun(attractMode, levelData) {
+function initializeRun(attractMode, levelData, dailyChallenge) {
     var keepLevelSelection = attractMode && !ui.levelSelect.classList.contains('hidden');
     game.running = true;
     game.paused = false;
     orientationPaused = false;
     game.attractMode = attractMode;
     game.levelData = levelData || null;
+    game.dailyChallenge = dailyChallenge === true && !attractMode && !levelData;
+    game.dailyDate = '';
+    game.dailySpawnState = 0;
+    game.dailyTargetState = 0;
+    game.dailyNextObstacleDistance = 90;
+    game.dailyNextWallDistance = 350;
+    if (game.dailyChallenge) {
+        refreshDailyChallengeDate();
+        game.dailyDate = dailyChallengeState.date;
+        var dailySeed = hashDailySeed(game.dailyDate);
+        game.dailySpawnState = dailySeed;
+        game.dailyTargetState = (dailySeed ^ 2654435769) >>> 0;
+    }
     game.levelDistance = 0;
     game.levelElapsed = 0;
     game.levelEventIndex = 0;
     game.levelAccumulator = 0;
     game.bossPending = false;
     game.boss = null;
+    game.dailyBonusAwarded = 0;
+    game.runDistance = 0;
+    game.lastDistanceCheckpoint = 0;
+    game.comboMultiplier = 1;
+    game.pendingFailTimer = 0;
     game.score = 0;
     game.sessionCoins = 0;
     game.speed = levelData ? levelData.speed : 1.2;
@@ -2276,6 +2663,8 @@ function initializeRun(attractMode, levelData) {
     ui.commands.classList.add('hidden');
     ui.shop.classList.add('hidden');
     ui.levelSelect.classList.toggle('hidden', !keepLevelSelection);
+    ui.missions.classList.add('hidden');
+    ui.dailyMenu.classList.add('hidden');
     ui.main.classList.toggle('hidden', !attractMode || keepLevelSelection);
     ui.game.classList.toggle('hidden', attractMode);
     ui.levelProgress.classList.toggle('hidden', !levelData);
@@ -2283,6 +2672,9 @@ function initializeRun(attractMode, levelData) {
     ui.levelProgressValue.textContent = '0%';
     ui.levelProgress.setAttribute('aria-valuenow', '0');
     ui.levelProgressBiome.textContent = levelData ? levelData.name : 'GIUNGLA';
+    ui.combo.classList.add('hidden');
+    ui.dailyRunLabel.textContent = game.dailyChallenge ? 'SFIDA · ' + game.dailyDate : '';
+    ui.dailyRunLabel.classList.toggle('hidden', !game.dailyChallenge);
     ui.bossHud.classList.add('hidden');
     ui.bossName.textContent = '';
     ui.bossHealthValue.textContent = '';
@@ -2292,7 +2684,7 @@ function initializeRun(attractMode, levelData) {
     ui.overlay.classList.remove('boss-fight-active');
     ui.duck.classList.toggle('active', !attractMode && isMobileTouch());
     ui.prompt.classList.add('hidden');
-    ui.prompt.classList.remove('hit-good');
+    ui.prompt.classList.remove('hit-perfect', 'hit-good', 'hit-miss');
     ui.target.classList.add('hidden');
     ui.newRecord.classList.add('hidden');
     ui.biome.textContent = BIOMES[game.biomeIndex].name;
@@ -2317,6 +2709,13 @@ function startGame() {
     updateOrientationState();
 }
 
+function startDailyChallenge() {
+    music.unlock(true);
+    requestMobilePresentation();
+    initializeRun(false, null, true);
+    updateOrientationState();
+}
+
 function startLevel(levelId) {
     var levelIndex = LEVEL_IDS.indexOf(levelId);
     var levelData = window.PIXEL_RUNNER_LEVELS && window.PIXEL_RUNNER_LEVELS[levelId];
@@ -2336,7 +2735,9 @@ function startLevel(levelId) {
 }
 
 function restartCurrentRun() {
-    if (game.levelData) {
+    if (game.dailyChallenge) {
+        startDailyChallenge();
+    } else if (game.levelData) {
         startLevel(game.levelData.id);
     } else {
         startGame();
@@ -2384,12 +2785,28 @@ function gameOver(levelComplete) {
     orientationPaused = false;
 
     var score = Math.floor(game.score);
+    var distance = Math.floor(game.runDistance);
     var levelReward = levelComplete && game.levelData ? completeCurrentLevel() : 0;
     game.sessionCoins += levelReward;
-    save.coins += game.sessionCoins;
+    if (levelComplete && game.levelData) checkAchievement('firstVictory');
+
+    if (game.dailyChallenge) {
+        if (dailyChallengeState.date !== game.dailyDate) {
+            dailyChallengeState = createDailyChallengeState(game.dailyDate);
+        }
+        dailyChallengeState.bestScore = Math.max(dailyChallengeState.bestScore, score);
+        dailyChallengeState.bestDistance = Math.max(dailyChallengeState.bestDistance, distance);
+        persistDailyChallengeState();
+    }
+
+    achievementState.distance += distance;
+    game.runDistance = 0;
+    persistAchievementState();
+    checkAchievement('distance');
+    save.coins += Math.max(0, game.sessionCoins - game.dailyBonusAwarded);
 
     var isRecord = false;
-    if (!game.levelData && score > save.highScore) {
+    if (!game.levelData && !game.dailyChallenge && score > save.highScore) {
         save.highScore = score;
         isRecord = true;
     }
@@ -2397,12 +2814,16 @@ function gameOver(levelComplete) {
 
     ui.game.classList.add('hidden');
     ui.levelProgress.classList.add('hidden');
+    ui.combo.classList.add('hidden');
+    ui.dailyRunLabel.classList.add('hidden');
     ui.pause.classList.add('hidden');
     ui.mobileSettings.classList.add('hidden');
     ui.commands.classList.add('hidden');
+    ui.missions.classList.add('hidden');
+    ui.dailyMenu.classList.add('hidden');
     ui.duck.classList.remove('active');
     ui.prompt.classList.add('hidden');
-    ui.prompt.classList.remove('hit-good');
+    ui.prompt.classList.remove('hit-perfect', 'hit-good', 'hit-miss');
     ui.target.classList.add('hidden');
     ui.bossHud.classList.add('hidden');
     ui.bossAttackLabel.textContent = '';
@@ -2427,6 +2848,8 @@ function gameOver(levelComplete) {
 function showMenu() {
     ui.over.classList.add('hidden');
     ui.levelSelect.classList.add('hidden');
+    ui.missions.classList.add('hidden');
+    ui.dailyMenu.classList.add('hidden');
     ui.pause.classList.add('hidden');
     ui.mobileSettings.classList.add('hidden');
     ui.commands.classList.add('hidden');
@@ -2436,6 +2859,132 @@ function showMenu() {
     ui.highScore.textContent = save.highScore;
     ui.mainCoins.textContent = save.coins;
     if (!game.running || !game.attractMode) startAttract();
+}
+
+function buildProgressCard(title, description, progress, goal, reward, status, actionLabel, action) {
+    var card = document.createElement('article');
+    card.className = 'mission-card' + (status === 'COMPLETATO' || status === 'RISCATTATA' ? ' complete' : '');
+
+    var heading = document.createElement('h3');
+    heading.textContent = title;
+    card.appendChild(heading);
+
+    var detail = document.createElement('p');
+    detail.textContent = description;
+    card.appendChild(detail);
+
+    var track = document.createElement('div');
+    track.className = 'mission-progress-track';
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', String(goal));
+    track.setAttribute('aria-valuenow', String(Math.min(progress, goal)));
+    var fill = document.createElement('div');
+    fill.className = 'mission-progress-fill';
+    fill.style.width = Math.min(100, goal > 0 ? (progress / goal) * 100 : 0) + '%';
+    track.appendChild(fill);
+    card.appendChild(track);
+
+    var footer = document.createElement('div');
+    footer.className = 'mission-card-footer';
+    var progressLabel = document.createElement('span');
+    progressLabel.textContent = Math.min(progress, goal) + '/' + goal + ' · ' + status;
+    footer.appendChild(progressLabel);
+    var rewardLabel = document.createElement('strong');
+    rewardLabel.textContent = '+' + reward + ' ✦';
+    footer.appendChild(rewardLabel);
+    card.appendChild(footer);
+
+    if (actionLabel) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = actionLabel;
+        button.onclick = action;
+        card.appendChild(button);
+    }
+    return card;
+}
+
+function renderMissions() {
+    refreshDailyMissionDate();
+    ui.missionDate.textContent = dailyMissionState.date;
+    ui.missionList.innerHTML = '';
+    for (var i = 0; i < DAILY_MISSION_DEFS.length; i++) {
+        var definition = DAILY_MISSION_DEFS[i];
+        var mission = dailyMissionState.missions[definition.id];
+        var complete = mission.progress >= definition.goal;
+        var status = mission.claimed ? 'RISCATTATA' : complete ? 'COMPLETATA' : 'IN CORSO';
+        var buttonLabel = complete && !mission.claimed ? 'RISCATTA' : '';
+        var action = buttonLabel ? (function(id) {
+            return function() { claimDailyMission(id); };
+        })(definition.id) : null;
+        ui.missionList.appendChild(buildProgressCard(
+            definition.title,
+            'Avanzamento giornaliero',
+            mission.progress,
+            definition.goal,
+            definition.reward,
+            status,
+            buttonLabel,
+            action
+        ));
+    }
+
+    ui.achievementList.innerHTML = '';
+    for (var j = 0; j < ACHIEVEMENT_DEFS.length; j++) {
+        var achievement = ACHIEVEMENT_DEFS[j];
+        var progress = achievementProgress(achievement.id);
+        var unlocked = achievementState.unlocked[achievement.id] === true;
+        ui.achievementList.appendChild(buildProgressCard(
+            achievement.title,
+            achievement.description,
+            progress,
+            achievement.goal,
+            achievement.reward,
+            unlocked ? 'COMPLETATO' : 'BLOCCATO',
+            '',
+            null
+        ));
+    }
+}
+
+function selectMissionTab(tab) {
+    var daily = tab === 'daily';
+    ui.missionDailyTab.classList.toggle('active', daily);
+    ui.missionAchievementTab.classList.toggle('active', !daily);
+    ui.missionDailyTab.setAttribute('aria-selected', daily ? 'true' : 'false');
+    ui.missionAchievementTab.setAttribute('aria-selected', daily ? 'false' : 'true');
+    ui.missionDailySection.classList.toggle('hidden', !daily);
+    ui.missionAchievementSection.classList.toggle('hidden', daily);
+}
+
+function showMissions() {
+    renderMissions();
+    selectMissionTab('daily');
+    ui.main.classList.add('hidden');
+    ui.levelSelect.classList.add('hidden');
+    ui.dailyMenu.classList.add('hidden');
+    ui.missions.classList.remove('hidden');
+}
+
+function showDailyChallenge() {
+    refreshDailyChallengeDate();
+    ui.dailyDate.textContent = 'DATA UTC · ' + dailyChallengeState.date;
+    ui.dailyBest.textContent = 'RECORD DEL GIORNO · ' + dailyChallengeState.bestScore +
+        ' PUNTI · ' + dailyChallengeState.bestDistance + ' m';
+    ui.dailyBonusStatus.textContent = dailyChallengeState.bonusClaimed ?
+        'BONUS GIORNALIERO GIA RISCATTATO' :
+        'BONUS DISPONIBILE AL TRAGUARDO DI ' + DAILY_BONUS_DISTANCE + ' m';
+    ui.main.classList.add('hidden');
+    ui.levelSelect.classList.add('hidden');
+    ui.missions.classList.add('hidden');
+    ui.dailyMenu.classList.remove('hidden');
+}
+
+function returnToMainMenu() {
+    ui.missions.classList.add('hidden');
+    ui.dailyMenu.classList.add('hidden');
+    showMenu();
 }
 
 function buildLevelCard(levelId, index) {
@@ -2769,6 +3318,7 @@ function openChest() {
             save.coins += refund;
         }
         persist();
+        recordChestOpening();
 
         var title = document.createElement('strong');
         title.className = 'chest-result-title rarity-' + rewardRarity + (goldSlot ? ' gold-result' : '');
@@ -2960,17 +3510,24 @@ function updateObstacles() {
     var wallSafetyActive = !!upcomingWall &&
         upcomingWall.x - (player.x + player.w) <= getWallSafetyDistance();
 
-    if (!game.levelData && game.biomeTransitionTimer <= 0 && !wallSafetyActive) {
-        game.lastObstacle++;
-        var gapDistance = Math.max(110, 190 - Math.min(55, game.score * 0.06));
-        var minGap = Math.max(18, gapDistance / game.speed);
-        if (game.lastObstacle > minGap + rand(0, minGap * 0.3)) {
-            spawnObstacle();
-            game.lastObstacle = 0;
+    if (!game.levelData && game.biomeTransitionTimer <= 0) {
+        if (game.dailyChallenge) {
+            if (game.runDistance >= game.dailyNextObstacleDistance) {
+                if (!isDailyWallSafetyZone(game.runDistance)) spawnObstacle();
+                advanceDailyObstacleSchedule();
+            }
+        } else if (!wallSafetyActive) {
+            game.lastObstacle++;
+            var gapDistance = Math.max(110, 190 - Math.min(55, game.score * 0.06));
+            var minGap = Math.max(18, gapDistance / game.speed);
+            if (game.lastObstacle > minGap + rand(0, minGap * 0.3)) {
+                spawnObstacle();
+                game.lastObstacle = 0;
+            }
         }
     }
 
-    if (wallSafetyActive) game.lastObstacle = 0;
+    if (!game.dailyChallenge && wallSafetyActive) game.lastObstacle = 0;
 
     for (var i = obstacles.length - 1; i >= 0; i--) {
         var o = obstacles[i];
@@ -3017,7 +3574,8 @@ function updateObstacles() {
 function updateCoins() {
     if (!game.levelData) {
         game.lastCoin++;
-        var coinInterval = (250 + rand(0, 90)) / game.speed;
+        var coinVariation = game.dailyChallenge ? spawnRandom() * 90 : rand(0, 90);
+        var coinInterval = (250 + coinVariation) / game.speed;
         if (game.lastCoin > coinInterval) {
             spawnCoinRow();
             game.lastCoin = 0;
@@ -3038,6 +3596,7 @@ function updateCoins() {
         var playerBounds = playerCollisionBounds();
         if (aabb(player.x, playerBounds.y, player.w, playerBounds.h, c.x, c.y, c.w, c.h)) {
             game.sessionCoins++;
+            recordDailyMissionProgress('coins', 1);
             music.playSfx('coin');
             spawnCoinParticles(c.x + 4, c.y + 4);
             coins.splice(i, 1);
@@ -3117,7 +3676,7 @@ function updateBiomeTransition(dt) {
 
 function activeTimingWall() {
     for (var i = 0; i < walls.length; i++) {
-        if (!walls[i].destroyed && walls[i].windowStart >= 0) return walls[i];
+        if (!walls[i].destroyed && !walls[i].missed && walls[i].windowStart >= 0) return walls[i];
     }
     return null;
 }
@@ -3179,7 +3738,7 @@ function positionWallTarget(wall) {
         positions.push({ x: fallbackX, y: fallbackY });
     }
 
-    var position = positions[Math.floor(Math.random() * positions.length)];
+    var position = positions[Math.floor(targetRandom() * positions.length)];
     wall.targetX = position.x - bounds.left;
     wall.targetY = position.y - bounds.top;
     ui.target.style.left = wall.targetX + 'px';
@@ -3189,22 +3748,34 @@ function positionWallTarget(wall) {
 }
 
 function attemptWallHit(wall) {
-    if (!wall || wall.destroyed || wall.windowStart < 0) return false;
+    if (!wall || wall.destroyed || wall.missed || wall.windowStart < 0) return false;
     var progress = wall.windowStart / wall.windowDuration;
-    music.playSfx('wall', progress >= 0.92);
+    var judgment = game.attractMode ? 'good' : timingJudgment(progress);
+    if (judgment === 'miss') {
+        registerTimingJudgment('miss');
+        wall.missed = true;
+        wall.windowStart = -1;
+        game.pendingFailTimer = 24;
+        ui.target.classList.add('hidden');
+        return true;
+    }
+
+    music.playSfx('wall', judgment === 'perfect');
+    if (!game.attractMode) registerTimingJudgment(judgment, true);
     wall.destroyed = true;
     wall.flashTimer = 0;
     ui.target.classList.add('hidden');
     game.score += 25;
     game.sessionCoins += 5;
+    if (judgment === 'perfect' && !game.attractMode) {
+        game.score += 10 * game.comboMultiplier;
+        game.sessionCoins += game.comboMultiplier;
+        recordDailyMissionProgress('perfectWalls', 1);
+    } else if (judgment === 'good' && !game.attractMode) {
+        game.score += 4 * game.comboMultiplier;
+    }
     game.flashAlpha = 0.6;
     game.screenShake = 5;
-    if (!game.attractMode) {
-        ui.prompt.textContent = progress >= 0.92 ? 'PERFECT!' : 'GREAT!';
-        ui.prompt.classList.add('hit-good');
-        ui.prompt.classList.remove('hidden');
-        hitFeedbackTimer = 45;
-    }
     spawnParticles(wall.x + wall.w / 2, GROUND_Y / 2, biome().particles, 32);
     spawnParticles(wall.x + wall.w / 2, GROUND_Y / 3, biome().wallColor, 22);
     return true;
@@ -3212,11 +3783,18 @@ function attemptWallHit(wall) {
 
 function updateWalls() {
     if (!game.levelData && game.biomeTransitionTimer <= 0) {
-        game.lastWall++;
-        var wallInterval = Math.max(360, 600 - Math.min(180, game.score * 0.16)) / game.speed;
-        if (game.lastWall > wallInterval && !game.wallActive && Math.floor(game.score) > 30) {
-            spawnWall();
-            game.lastWall = 0;
+        if (game.dailyChallenge) {
+            if (game.runDistance >= game.dailyNextWallDistance && !game.wallActive) {
+                spawnWall();
+                game.dailyNextWallDistance += 650;
+            }
+        } else {
+            game.lastWall++;
+            var wallInterval = Math.max(360, 600 - Math.min(180, game.score * 0.16)) / game.speed;
+            if (game.lastWall > wallInterval && !game.wallActive && Math.floor(game.score) > 30) {
+                spawnWall();
+                game.lastWall = 0;
+            }
         }
     }
 
@@ -3228,6 +3806,14 @@ function updateWalls() {
             ui.target.classList.add('hidden');
             wall.flashTimer++;
             if (wall.flashTimer > 22) {
+                walls.splice(i, 1);
+                game.wallActive = false;
+            }
+            continue;
+        }
+
+        if (wall.missed) {
+            if (wall.x + wall.w < 0) {
                 walls.splice(i, 1);
                 game.wallActive = false;
             }
@@ -3246,7 +3832,7 @@ function updateWalls() {
             wall.windowDuration = approachDuration;
             if (!game.attractMode) {
                 ui.prompt.textContent = 'TOCCA IL BERSAGLIO A TEMPO';
-                ui.prompt.classList.remove('hit-good');
+                ui.prompt.classList.remove('hit-perfect', 'hit-good', 'hit-miss');
                 ui.prompt.classList.remove('hidden');
                 ui.target.classList.remove('hidden');
                 positionWallTarget(wall);
@@ -3264,7 +3850,20 @@ function updateWalls() {
             if (game.attractMode && wall.windowStart / wall.windowDuration >= 0.92) {
                 attemptWallHit(wall);
             }
+            var graceEnd = wall.windowDuration + timingGraceFrames(wall.windowDuration);
+            if (!game.attractMode && wall.windowStart >= graceEnd && !wall.missed) {
+                registerTimingJudgment('miss');
+                wall.missed = true;
+                wall.windowStart = -1;
+                game.pendingFailTimer = 24;
+                ui.target.classList.add('hidden');
+                continue;
+            }
         }
+
+        var targetInLateGrace = wall.windowStart >= wall.windowDuration &&
+            wall.windowStart < wall.windowDuration + timingGraceFrames(wall.windowDuration);
+        if (targetInLateGrace) continue;
 
         if (wall.x + wall.w < player.x) {
             ui.prompt.classList.add('hidden');
@@ -3328,7 +3927,7 @@ function updateBiome() {
         ui.biome.textContent = game.levelData.name;
         return;
     }
-    var scoreVal = Math.floor(game.score);
+    var scoreVal = Math.floor(game.dailyChallenge ? game.runDistance : game.score);
     var newBiome = Math.floor(scoreVal / 500) % BIOMES.length;
     if (newBiome !== game.biomeIndex) {
         game.prevBiomeIndex = game.biomeIndex;
@@ -3336,6 +3935,7 @@ function updateBiome() {
         music.setBiome(newBiome);
         game.biomeTransition = 0;
         ui.biome.textContent = BIOMES[game.biomeIndex].name;
+        if (!game.dailyChallenge && newBiome === 1) recordDailyMissionProgress('volcano', 1);
         beginBiomeTransition();
         for (var i = 0; i < atmParticles.length; i++) {
             atmParticles[i] = makeAtmParticle(true);
@@ -3351,6 +3951,15 @@ function updateBiome() {
 function update(dt) {
     game.frameCount++;
     game.score += game.speed * 0.05;
+    if (!game.attractMode) {
+        game.runDistance += game.speed * dt / (1000 / 60);
+        var distanceCheckpoint = Math.floor(game.runDistance / 100);
+        if (distanceCheckpoint > game.lastDistanceCheckpoint) {
+            game.lastDistanceCheckpoint = distanceCheckpoint;
+            checkAchievement('distance');
+        }
+        applyDailyChallengeDistanceReward();
+    }
     if (game.levelData) {
         if (!game.boss) {
             game.levelElapsed = Math.min(
@@ -3371,7 +3980,8 @@ function update(dt) {
         }
         updateLevelProgress();
     } else {
-        var targetSpeed = game.baseSpeed + (5.2 - game.baseSpeed) * (1 - Math.exp(-game.score / 1100));
+        var speedProgress = game.dailyChallenge ? game.runDistance : game.score;
+        var targetSpeed = game.baseSpeed + (5.2 - game.baseSpeed) * (1 - Math.exp(-speedProgress / 1100));
         game.speed += (targetSpeed - game.speed) * 0.015;
     }
 
@@ -3383,6 +3993,13 @@ function update(dt) {
     if (!game.running) return;
     updateCoins();
     updateWalls();
+    if (game.pendingFailTimer > 0) {
+        game.pendingFailTimer--;
+        if (game.pendingFailTimer === 0) {
+            gameOver();
+            return;
+        }
+    }
     if (game.levelData && game.boss) updateBoss();
     if (!game.running) return;
     updateBiomeTransition(dt);
@@ -3396,7 +4013,7 @@ function update(dt) {
         hitFeedbackTimer--;
         if (hitFeedbackTimer === 0 && !activeTimingWall() && !activeBossTarget()) {
             ui.prompt.classList.add('hidden');
-            ui.prompt.classList.remove('hit-good');
+            ui.prompt.classList.remove('hit-perfect', 'hit-good', 'hit-miss');
         }
     }
 
@@ -4127,7 +4744,7 @@ function loop(time) {
 
     if (dt > 100) dt = 16;
 
-    if (game.levelData) {
+    if (game.levelData || game.dailyChallenge) {
         var fixedStep = 1000 / 60;
         game.levelAccumulator += dt;
         while (game.levelAccumulator >= fixedStep && game.running) {
@@ -4298,6 +4915,13 @@ document.getElementById('start-btn').onclick = function() {
     startGame();
 };
 document.getElementById('levels-btn').onclick = showLevelSelection;
+document.getElementById('missions-btn').onclick = showMissions;
+document.getElementById('daily-challenge-btn').onclick = showDailyChallenge;
+document.getElementById('mission-daily-tab').onclick = function() { selectMissionTab('daily'); };
+document.getElementById('mission-achievement-tab').onclick = function() { selectMissionTab('achievement'); };
+document.getElementById('missions-back-btn').onclick = returnToMainMenu;
+document.getElementById('daily-challenge-start-btn').onclick = startDailyChallenge;
+document.getElementById('daily-challenge-back-btn').onclick = returnToMainMenu;
 ui.levelCards.addEventListener('click', function(e) {
     var button = e.target.closest('button[data-level-id]');
     if (button && !button.disabled) startLevel(button.dataset.levelId);
@@ -4328,6 +4952,11 @@ document.getElementById('chest-close-btn').onclick = function() {
 };
 
 scaleCanvas();
+checkAchievement('firstVictory');
+checkAchievement('starCollector');
+checkAchievement('bossHunter');
+checkAchievement('unboxer');
+checkAchievement('distance');
 showMenu();
 updateOrientationState();
 
