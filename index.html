@@ -30,14 +30,29 @@
                     <p class="menu-tagline">Corri oltre i confini.</p>
                     <div class="menu-actions">
                         <button id="start-btn" class="primary-button">GIOCA</button>
+                        <button id="levels-btn">LIVELLI</button>
                         <button id="shop-btn">NEGOZIO</button>
                         <button id="main-controls-btn">COMANDI</button>
                     </div>
                 </div>
             </div>
 
+            <div id="level-select-menu" class="overlay-screen hidden">
+                <section id="level-select-panel" class="glass-panel">
+                    <div class="menu-eyebrow">PERCORSO AVVENTURA</div>
+                    <h2>SELEZIONE LIVELLI</h2>
+                    <div id="level-select-coins"></div>
+                    <div id="level-card-list" aria-live="polite"></div>
+                    <button id="level-select-back-btn" type="button">MENU PRINCIPALE</button>
+                </section>
+            </div>
+
             <div id="game-ui" class="hidden">
                 <div id="current-score" class="score-value">0</div>
+                <div id="level-progress" class="hidden" role="progressbar" aria-label="Progresso livello Giungla" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div class="level-progress-heading"><span>GIUNGLA</span><span id="level-progress-value">0%</span></div>
+                    <div class="level-progress-track"><div id="level-progress-fill"></div></div>
+                </div>
                 <div id="score-container">
                     <div id="coin-count"></div>
                 </div>
@@ -157,6 +172,7 @@
             <h2>Ruota il telefono in orizzontale per giocare</h2>
         </div>
     </div>
+    <script src="level-data.js"></script>
     <script src="game.js"></script>
 </body>
 </html>

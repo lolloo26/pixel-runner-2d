@@ -362,9 +362,18 @@ var COIN_ANIM3 = COIN_ANIM1;
 
 var COIN_FRAMES = [COIN_SPRITE, COIN_ANIM1, COIN_ANIM2, COIN_ANIM3];
 
+var LEVEL_IDS = window.PIXEL_RUNNER_LEVEL_ORDER;
+var LEVEL_PROGRESS_KEY = 'pr_level_progress';
+
 var ui = {
     main:         document.getElementById('main-menu'),
+    levelSelect:  document.getElementById('level-select-menu'),
+    levelCards:   document.getElementById('level-card-list'),
+    levelSelectCoins: document.getElementById('level-select-coins'),
     game:         document.getElementById('game-ui'),
+    levelProgress: document.getElementById('level-progress'),
+    levelProgressFill: document.getElementById('level-progress-fill'),
+    levelProgressValue: document.getElementById('level-progress-value'),
     over:         document.getElementById('game-over'),
     pause:        document.getElementById('pause-menu'),
     musicToggle:  document.getElementById('music-toggle'),
@@ -384,6 +393,7 @@ var ui = {
     biomeTitle:   document.getElementById('biome-title'),
     biomeParticles: document.getElementById('biome-particles'),
     score:        document.getElementById('current-score'),
+    overTitle:    document.querySelector('#game-over h2'),
     target:       document.getElementById('wall-hit-target'),
     coinCount:    document.getElementById('coin-count'),
     biome:        document.getElementById('biome-indicator'),
@@ -418,10 +428,77 @@ function persist() {
     localStorage.setItem('pr_audio_enabled', save.audioEnabled);
 }
 
+function createDefaultLevelProgress() {
+    var levels = {};
+    for (var i = 0; i < LEVEL_IDS.length; i++) {
+        levels[LEVEL_IDS[i]] = {
+            completed: false,
+            completions: 0,
+            stars: 0
+        };
+    }
+    return {
+        version: 1,
+        unlockedThrough: 0,
+        levels: levels
+    };
+}
+
+function loadLevelProgress() {
+    var stored = localStorage.getItem(LEVEL_PROGRESS_KEY);
+    if (!stored) return createDefaultLevelProgress();
+
+    var parsed;
+    try {
+        parsed = JSON.parse(stored);
+    } catch (error) {
+        console.error('Progressi livelli non validi in localStorage.', error);
+        return createDefaultLevelProgress();
+    }
+
+    if (!parsed || parsed.version !== 1 || !Number.isInteger(parsed.unlockedThrough) ||
+        parsed.unlockedThrough < 0 || parsed.unlockedThrough >= LEVEL_IDS.length ||
+        !parsed.levels || typeof parsed.levels !== 'object') {
+        console.error('Formato dei progressi livelli non valido in localStorage.');
+        return createDefaultLevelProgress();
+    }
+
+    var progress = createDefaultLevelProgress();
+    progress.unlockedThrough = parsed.unlockedThrough;
+    for (var i = 0; i < LEVEL_IDS.length; i++) {
+        var id = LEVEL_IDS[i];
+        var storedLevel = parsed.levels[id];
+        if (!storedLevel || typeof storedLevel !== 'object') continue;
+        var completions = Number.isInteger(storedLevel.completions) && storedLevel.completions >= 0 ?
+            storedLevel.completions : 0;
+        var completed = storedLevel.completed === true;
+        progress.levels[id] = {
+            completed: completed,
+            completions: completed ? Math.max(1, completions) : completions,
+            stars: Number.isInteger(storedLevel.stars) ?
+                Math.max(0, Math.min(3, storedLevel.stars)) : 0
+        };
+    }
+    return progress;
+}
+
+var levelProgress = loadLevelProgress();
+
+function persistLevelProgress() {
+    localStorage.setItem(LEVEL_PROGRESS_KEY, JSON.stringify(levelProgress));
+}
+
+if (localStorage.getItem(LEVEL_PROGRESS_KEY) === null) persistLevelProgress();
+
 var game = {
     running: false,
     paused: false,
     attractMode: false,
+    levelData: null,
+    levelDistance: 0,
+    levelElapsed: 0,
+    levelEventIndex: 0,
+    levelAccumulator: 0,
     score: 0,
     sessionCoins: 0,
     speed: 1.2,
@@ -1054,6 +1131,7 @@ var player = {
     jumpHeld: false,
     jumpTimer: 0,
     jumpBuffer: 0,
+    fallingInPit: false,
     animFrame: 0,
     animTimer: 0
 };
@@ -1062,6 +1140,7 @@ var keys = {};
 var obstacles = [];
 var coins = [];
 var walls = [];
+var pits = [];
 var particles = [];
 var atmParticles = [];
 var bgLayers = { far: [], mid: [], stars: [] };
@@ -1323,6 +1402,84 @@ function spawnObstacle() {
     }
 }
 
+function spawnLevelObstacle(event) {
+    var b = BIOMES[game.levelData.biomeIndex];
+    var width = event.width || 6;
+    var height = event.height || 8;
+    var flying = event.flying === true;
+    var y = event.y === undefined ? GROUND_Y - height - 16 : event.y;
+    obstacles.push({
+        x: W + 8,
+        y: flying ? Math.min(y, GROUND_Y - height) : GROUND_Y - height,
+        w: width,
+        h: height,
+        flying: flying,
+        color: flying ? b.flyColor : b.obstacleColor,
+        dark: flying ? b.flyDark : b.obstacleDark,
+        highlight: flying ? b.flyHighlight : b.obstacleHighlight,
+        wingTimer: 0
+    });
+}
+
+function spawnLevelCoins(event) {
+    var count = event.count || 5;
+    var y = Math.max(4, Math.min(event.y, GROUND_Y - 8));
+    for (var i = 0; i < count; i++) {
+        coins.push({
+            x: W + 8 + i * 10,
+            y: y,
+            w: 8,
+            h: 8,
+            frame: 0,
+            timer: 0
+        });
+    }
+}
+
+function spawnLevelEvent(event) {
+    if (event.type === 'obstacle') {
+        spawnLevelObstacle(event);
+    } else if (event.type === 'coins') {
+        spawnLevelCoins(event);
+    } else if (event.type === 'wall') {
+        spawnWall();
+    } else if (event.type === 'pit') {
+        pits.push({ x: W + 8, w: event.width });
+    }
+}
+
+function updateLevelEvents() {
+    var events = game.levelData.events;
+    while (game.levelEventIndex < events.length &&
+        events[game.levelEventIndex].at <= game.levelDistance) {
+        spawnLevelEvent(events[game.levelEventIndex]);
+        game.levelEventIndex++;
+    }
+}
+
+function updateLevelPits() {
+    for (var i = pits.length - 1; i >= 0; i--) {
+        pits[i].x -= game.speed;
+        if (pits[i].x + pits[i].w < 0) pits.splice(i, 1);
+    }
+}
+
+function playerOverPit() {
+    for (var i = 0; i < pits.length; i++) {
+        if (player.x + player.w > pits[i].x && player.x < pits[i].x + pits[i].w) return true;
+    }
+    return false;
+}
+
+function updateLevelProgress() {
+    var progress = Math.min(1, game.levelElapsed / (game.levelData.durationSeconds * 1000));
+    var percent = Math.floor(progress * 100);
+    ui.levelProgressFill.style.width = (progress * 100) + '%';
+    ui.levelProgressValue.textContent = percent + '%';
+    ui.levelProgress.setAttribute('aria-label', 'Progresso livello ' + game.levelData.name);
+    ui.levelProgress.setAttribute('aria-valuenow', String(percent));
+}
+
 function obstaclesOverlapAt(nx, ny, nw, nh) {
     for (var i = 0; i < obstacles.length; i++) {
         var o = obstacles[i];
@@ -1442,19 +1599,26 @@ function resetPlayer() {
     player.jumpHeld = false;
     player.jumpTimer = 0;
     player.jumpBuffer = 0;
+    player.fallingInPit = false;
 }
 
-function initializeRun(attractMode) {
+function initializeRun(attractMode, levelData) {
+    var keepLevelSelection = attractMode && !ui.levelSelect.classList.contains('hidden');
     game.running = true;
     game.paused = false;
     orientationPaused = false;
     game.attractMode = attractMode;
+    game.levelData = levelData || null;
+    game.levelDistance = 0;
+    game.levelElapsed = 0;
+    game.levelEventIndex = 0;
+    game.levelAccumulator = 0;
     game.score = 0;
     game.sessionCoins = 0;
-    game.speed = 1.2;
-    game.baseSpeed = 1.2;
-    game.biomeIndex = 0;
-    music.setMode(attractMode ? 'menu' : 'game', 0);
+    game.speed = levelData ? levelData.speed : 1.2;
+    game.baseSpeed = levelData ? levelData.speed : 1.2;
+    game.biomeIndex = levelData ? levelData.biomeIndex : 0;
+    music.setMode(attractMode ? 'menu' : 'game', game.biomeIndex);
     music.setPaused(false);
     game.prevBiomeIndex = -1;
     game.biomeTransition = 1;
@@ -1475,6 +1639,7 @@ function initializeRun(attractMode) {
     obstacles = [];
     coins = [];
     walls = [];
+    pits = [];
     particles = [];
     keys = {};
     clearTouchInputs();
@@ -1485,16 +1650,29 @@ function initializeRun(attractMode) {
     ui.mobileSettings.classList.add('hidden');
     ui.commands.classList.add('hidden');
     ui.shop.classList.add('hidden');
-    ui.main.classList.toggle('hidden', !attractMode);
+    ui.levelSelect.classList.toggle('hidden', !keepLevelSelection);
+    ui.main.classList.toggle('hidden', !attractMode || keepLevelSelection);
     ui.game.classList.toggle('hidden', attractMode);
+    ui.levelProgress.classList.toggle('hidden', !levelData);
+    ui.levelProgressFill.style.width = '0%';
+    ui.levelProgressValue.textContent = '0%';
+    ui.levelProgress.setAttribute('aria-valuenow', '0');
     ui.duck.classList.toggle('active', !attractMode && isMobileTouch());
     ui.prompt.classList.add('hidden');
     ui.prompt.classList.remove('hit-good');
     ui.target.classList.add('hidden');
     ui.newRecord.classList.add('hidden');
-    ui.biome.textContent = BIOMES[0].name;
+    ui.biome.textContent = BIOMES[game.biomeIndex].name;
     displayedScore = -1;
-    beginBiomeTransition();
+    if (levelData) {
+        ui.biomeTransition.classList.add('hidden');
+        ui.biomeParticles.innerHTML = '';
+        ui.biome.textContent = levelData.name;
+        ui.overlay.classList.remove('theme-jungle', 'theme-volcano', 'theme-glacier', 'theme-neon');
+        ui.overlay.classList.add('theme-' + BIOMES[game.biomeIndex].theme);
+    } else {
+        beginBiomeTransition();
+    }
 
     ensureLoop();
 }
@@ -1506,12 +1684,61 @@ function startGame() {
     updateOrientationState();
 }
 
+function startLevel(levelId) {
+    var levelIndex = LEVEL_IDS.indexOf(levelId);
+    var levelData = window.PIXEL_RUNNER_LEVELS && window.PIXEL_RUNNER_LEVELS[levelId];
+    if (!levelData || !Array.isArray(levelData.events)) {
+        console.error('Dati del livello non disponibili o non validi:', levelId);
+        return;
+    }
+    if (levelIndex < 0 || levelIndex > levelProgress.unlockedThrough) {
+        console.error('Il livello richiesto è bloccato:', levelId);
+        return;
+    }
+    music.unlock(true);
+    requestMobilePresentation();
+    initializeRun(false, levelData);
+    updateOrientationState();
+}
+
+function restartCurrentRun() {
+    if (game.levelData) {
+        startLevel(game.levelData.id);
+    } else {
+        startGame();
+    }
+}
+
+function completeCurrentLevel() {
+    var levelIndex = LEVEL_IDS.indexOf(game.levelData.id);
+    var record = levelProgress.levels[game.levelData.id];
+    if (levelIndex < 0 || !record) {
+        console.error('Impossibile salvare il completamento del livello:', game.levelData.id);
+        return 0;
+    }
+
+    var reward = record.completions === 0 ?
+        game.levelData.firstCompletionReward : game.levelData.replayReward;
+    if (!Number.isFinite(reward) || reward < 0) {
+        console.error('Ricompensa non valida per il livello:', game.levelData.id);
+        return 0;
+    }
+    record.completed = true;
+    record.completions++;
+    levelProgress.unlockedThrough = Math.min(
+        LEVEL_IDS.length - 1,
+        Math.max(levelProgress.unlockedThrough, levelIndex + 1)
+    );
+    persistLevelProgress();
+    return reward;
+}
+
 function startAttract() {
     initializeRun(true);
     updateOrientationState();
 }
 
-function gameOver() {
+function gameOver(levelComplete) {
     if (game.attractMode) {
         initializeRun(true);
         return;
@@ -1523,16 +1750,19 @@ function gameOver() {
     orientationPaused = false;
 
     var score = Math.floor(game.score);
+    var levelReward = levelComplete && game.levelData ? completeCurrentLevel() : 0;
+    game.sessionCoins += levelReward;
     save.coins += game.sessionCoins;
 
     var isRecord = false;
-    if (score > save.highScore) {
+    if (!game.levelData && score > save.highScore) {
         save.highScore = score;
         isRecord = true;
     }
     persist();
 
     ui.game.classList.add('hidden');
+    ui.levelProgress.classList.add('hidden');
     ui.pause.classList.add('hidden');
     ui.mobileSettings.classList.add('hidden');
     ui.commands.classList.add('hidden');
@@ -1546,8 +1776,10 @@ function gameOver() {
     game.biomeTransitionTimer = 0;
     hitFeedbackTimer = 0;
     ui.over.classList.remove('hidden');
+    ui.overTitle.textContent = levelComplete ? 'LIVELLO COMPLETATO' : 'GAME OVER';
     ui.finalScore.textContent = 'PUNTI: ' + score;
-    ui.finalCoins.textContent = 'MONETE: +' + game.sessionCoins;
+    ui.finalCoins.textContent = 'MONETE: +' + game.sessionCoins +
+        (levelReward > 0 ? ' · PREMIO: +' + levelReward : '');
     if (isRecord) {
         ui.newRecord.classList.remove('hidden');
     } else {
@@ -1557,6 +1789,7 @@ function gameOver() {
 
 function showMenu() {
     ui.over.classList.add('hidden');
+    ui.levelSelect.classList.add('hidden');
     ui.pause.classList.add('hidden');
     ui.mobileSettings.classList.add('hidden');
     ui.commands.classList.add('hidden');
@@ -1565,6 +1798,83 @@ function showMenu() {
     ui.main.classList.remove('hidden');
     ui.highScore.textContent = save.highScore;
     ui.mainCoins.textContent = save.coins;
+    if (!game.running || !game.attractMode) startAttract();
+}
+
+function buildLevelCard(levelId, index) {
+    var level = window.PIXEL_RUNNER_LEVELS[levelId];
+    var record = levelProgress.levels[levelId];
+    if (!level || !record) {
+        console.error('Dati o progressi non disponibili per il livello:', levelId);
+        return null;
+    }
+
+    var locked = index > levelProgress.unlockedThrough;
+    var status = record.completed ? 'completed' : locked ? 'locked' : 'unlocked';
+    var statusText = record.completed ? 'COMPLETATO' : locked ? 'BLOCCATO' : 'SBLOCCATO';
+    var card = document.createElement('article');
+    card.className = 'level-card';
+    card.dataset.biome = levelId;
+
+    var heading = document.createElement('div');
+    heading.className = 'level-card-heading';
+    var title = document.createElement('h3');
+    title.textContent = level.name;
+    var theme = document.createElement('div');
+    theme.className = 'level-card-theme';
+    theme.textContent = level.subtitle;
+    heading.appendChild(title);
+    heading.appendChild(theme);
+
+    var statusElement = document.createElement('div');
+    statusElement.className = 'level-card-status';
+    statusElement.dataset.status = status;
+    statusElement.textContent = statusText;
+
+    var starsGroup = document.createElement('div');
+    starsGroup.setAttribute('aria-label', 'Tre stelle disponibili nello Step 5');
+    var stars = document.createElement('div');
+    stars.className = 'level-card-stars';
+    stars.textContent = '☆☆☆';
+    var starsLabel = document.createElement('div');
+    starsLabel.className = 'level-card-stars-label';
+    starsLabel.textContent = 'STELLE';
+    starsGroup.appendChild(stars);
+    starsGroup.appendChild(starsLabel);
+
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.levelId = levelId;
+    button.disabled = locked;
+    button.textContent = locked ? 'BLOCCATO' : 'GIOCA';
+    button.setAttribute('aria-label', (locked ? 'Livello bloccato: ' : 'Avvia livello ') + level.name);
+    if (!locked) button.classList.add('primary-button');
+
+    card.appendChild(heading);
+    card.appendChild(statusElement);
+    card.appendChild(starsGroup);
+    card.appendChild(button);
+    return card;
+}
+
+function renderLevelSelection() {
+    ui.levelCards.innerHTML = '';
+    ui.levelSelectCoins.textContent = 'MONETE: ' + save.coins;
+    for (var i = 0; i < LEVEL_IDS.length; i++) {
+        var card = buildLevelCard(LEVEL_IDS[i], i);
+        if (card) ui.levelCards.appendChild(card);
+    }
+}
+
+function showLevelSelection() {
+    renderLevelSelection();
+    ui.main.classList.add('hidden');
+    ui.levelSelect.classList.remove('hidden');
+}
+
+function closeLevelSelection() {
+    ui.levelSelect.classList.add('hidden');
+    ui.main.classList.remove('hidden');
     if (!game.running || !game.attractMode) startAttract();
 }
 
@@ -1907,10 +2217,22 @@ function updatePlayer() {
 
     var ph = player.crouching ? 6 : PH;
     var floor = GROUND_Y - ph;
-    if (player.y >= floor) {
+    var overPit = game.levelData && playerOverPit();
+    if (player.y >= floor && !overPit && !player.fallingInPit) {
         player.y = floor;
         player.vy = 0;
         player.grounded = true;
+    } else if (overPit && player.y >= floor) {
+        player.fallingInPit = true;
+        player.grounded = false;
+    }
+
+    if (player.fallingInPit) {
+        player.grounded = false;
+        if (player.y > H) {
+            gameOver();
+            return;
+        }
     }
 
     player.animTimer++;
@@ -1932,7 +2254,7 @@ function updateObstacles() {
     var wallSafetyActive = !!upcomingWall &&
         upcomingWall.x - (player.x + player.w) <= getWallSafetyDistance();
 
-    if (game.biomeTransitionTimer <= 0 && !wallSafetyActive) {
+    if (!game.levelData && game.biomeTransitionTimer <= 0 && !wallSafetyActive) {
         game.lastObstacle++;
         var gapDistance = Math.max(110, 190 - Math.min(55, game.score * 0.06));
         var minGap = Math.max(18, gapDistance / game.speed);
@@ -1969,11 +2291,13 @@ function updateObstacles() {
 }
 
 function updateCoins() {
-    game.lastCoin++;
-    var coinInterval = (250 + rand(0, 90)) / game.speed;
-    if (game.lastCoin > coinInterval) {
-        spawnCoinRow();
-        game.lastCoin = 0;
+    if (!game.levelData) {
+        game.lastCoin++;
+        var coinInterval = (250 + rand(0, 90)) / game.speed;
+        if (game.lastCoin > coinInterval) {
+            spawnCoinRow();
+            game.lastCoin = 0;
+        }
     }
 
     for (var i = coins.length - 1; i >= 0; i--) {
@@ -2081,7 +2405,7 @@ function positionWallTarget(wall) {
     var targetRadius = targetWidth / 2;
     var desiredScale = 1 + 38 / targetHitRadius;
     var safeRadius = targetRadius * desiredScale + 8;
-    var exclusions = [ui.score, ui.coinCount, ui.biome, ui.prompt, ui.mobileSettingsButton, ui.duck];
+    var exclusions = [ui.score, ui.levelProgress, ui.coinCount, ui.biome, ui.prompt, ui.mobileSettingsButton, ui.duck];
     var positions = [];
     var step = Math.max(8, Math.min(20, Math.floor(targetRadius / 2)));
 
@@ -2164,7 +2488,7 @@ function attemptWallHit(wall) {
 }
 
 function updateWalls() {
-    if (game.biomeTransitionTimer <= 0) {
+    if (!game.levelData && game.biomeTransitionTimer <= 0) {
         game.lastWall++;
         var wallInterval = Math.max(360, 600 - Math.min(180, game.score * 0.16)) / game.speed;
         if (game.lastWall > wallInterval && !game.wallActive && Math.floor(game.score) > 30) {
@@ -2277,6 +2601,11 @@ function updateAtmParticles() {
 }
 
 function updateBiome() {
+    if (game.levelData) {
+        game.biomeIndex = game.levelData.biomeIndex;
+        ui.biome.textContent = game.levelData.name;
+        return;
+    }
     var scoreVal = Math.floor(game.score);
     var newBiome = Math.floor(scoreVal / 500) % BIOMES.length;
     if (newBiome !== game.biomeIndex) {
@@ -2300,8 +2629,16 @@ function updateBiome() {
 function update(dt) {
     game.frameCount++;
     game.score += game.speed * 0.05;
-    var targetSpeed = game.baseSpeed + (5.2 - game.baseSpeed) * (1 - Math.exp(-game.score / 1100));
-    game.speed += (targetSpeed - game.speed) * 0.015;
+    if (game.levelData) {
+        game.levelElapsed += dt;
+        game.levelDistance += game.speed;
+        updateLevelEvents();
+        updateLevelPits();
+        updateLevelProgress();
+    } else {
+        var targetSpeed = game.baseSpeed + (5.2 - game.baseSpeed) * (1 - Math.exp(-game.score / 1100));
+        game.speed += (targetSpeed - game.speed) * 0.015;
+    }
 
     updateBiome();
     updatePlayer();
@@ -2314,6 +2651,11 @@ function update(dt) {
     if (!game.running) return;
     updateParticles();
     updateAtmParticles();
+    if (game.levelData && game.levelElapsed >= game.levelData.durationSeconds * 1000) {
+        updateLevelProgress();
+        gameOver(true);
+        return;
+    }
 
     if (game.screenShake > 0) game.screenShake -= 0.5;
     if (game.flashAlpha > 0)  game.flashAlpha  -= 0.03;
@@ -2450,6 +2792,21 @@ function drawGround() {
 
     ctx.fillStyle = rgba(gdk, 0.5);
     ctx.fillRect(0, GROUND_Y + 2, W, 1);
+}
+
+function drawLevelPits() {
+    if (!game.levelData) return;
+    var sky = rgb(transitionedColor('sky'));
+    var dark = rgb(transitionedColor('groundDark'));
+    for (var i = 0; i < pits.length; i++) {
+        var x = Math.floor(pits[i].x);
+        var width = Math.ceil(pits[i].w);
+        ctx.fillStyle = sky;
+        ctx.fillRect(x, GROUND_Y, width, H - GROUND_Y);
+        ctx.fillStyle = dark;
+        ctx.fillRect(x, GROUND_Y, Math.min(2, width), H - GROUND_Y);
+        ctx.fillRect(x + width - Math.min(2, width), GROUND_Y, Math.min(2, width), H - GROUND_Y);
+    }
 }
 
 function drawAtmParticles() {
@@ -2705,6 +3062,7 @@ function draw() {
     drawBackground();
     drawAtmParticles();
     drawGround();
+    drawLevelPits();
     drawWalls();
     drawObstacles();
     drawCoins();
@@ -2741,7 +3099,16 @@ function loop(time) {
 
     if (dt > 100) dt = 16;
 
-    update(dt);
+    if (game.levelData) {
+        var fixedStep = 1000 / 60;
+        game.levelAccumulator += dt;
+        while (game.levelAccumulator >= fixedStep && game.running) {
+            update(fixedStep);
+            game.levelAccumulator -= fixedStep;
+        }
+    } else {
+        update(dt);
+    }
     if (!game.running) {
         loopActive = false;
         return;
@@ -2885,7 +3252,7 @@ ui.touchSize.addEventListener('input', updateTouchButtonPreferences);
 ui.touchOpacity.addEventListener('input', updateTouchButtonPreferences);
 document.getElementById('mobile-settings-controls-btn').onclick = openCommands;
 document.getElementById('mobile-settings-resume-btn').onclick = closeMobileSettings;
-document.getElementById('mobile-settings-restart-btn').onclick = startGame;
+document.getElementById('mobile-settings-restart-btn').onclick = restartCurrentRun;
 document.getElementById('mobile-settings-menu-btn').onclick = showMenu;
 document.getElementById('mobile-settings-close-btn').onclick = closeMobileSettings;
 
@@ -2898,16 +3265,20 @@ ui.target.addEventListener('click', function(e) {
 document.getElementById('start-btn').onclick = function() {
     startGame();
 };
-document.getElementById('restart-btn').onclick = function() {
-    startGame();
-};
+document.getElementById('levels-btn').onclick = showLevelSelection;
+ui.levelCards.addEventListener('click', function(e) {
+    var button = e.target.closest('button[data-level-id]');
+    if (button && !button.disabled) startLevel(button.dataset.levelId);
+});
+document.getElementById('level-select-back-btn').onclick = closeLevelSelection;
+document.getElementById('restart-btn').onclick = restartCurrentRun;
 document.getElementById('menu-btn').onclick = showMenu;
 document.getElementById('shop-btn').onclick = function() { showShop(false); };
 document.getElementById('main-controls-btn').onclick = openCommands;
 document.getElementById('gameover-shop-btn').onclick = function() { showShop(true); };
 document.getElementById('resume-btn').onclick = resumeGame;
 document.getElementById('pause-controls-btn').onclick = openCommands;
-document.getElementById('pause-restart-btn').onclick = startGame;
+document.getElementById('pause-restart-btn').onclick = restartCurrentRun;
 document.getElementById('pause-menu-btn').onclick = showMenu;
 document.getElementById('commands-close-btn').onclick = closeCommands;
 document.getElementById('back-btn').onclick = function() {
