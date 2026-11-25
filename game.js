@@ -911,9 +911,7 @@ function registerTimingJudgment(judgment, suppressSfx) {
 }
 
 function timingJudgment(progress) {
-    if (progress >= 0.94 && progress <= 1.04) return 'perfect';
-    if ((progress >= 0.72 && progress < 0.94) || (progress > 1.04 && progress <= 1.12)) return 'good';
-    return 'miss';
+    return progress >= 0.94 && progress <= 1.04 ? 'perfect' : 'good';
 }
 
 function timingGraceFrames(duration) {
@@ -2361,12 +2359,6 @@ function attemptBossHit() {
     boss.targetActive = false;
     ui.target.classList.add('hidden');
     registerTimingJudgment(judgment);
-    if (judgment === 'miss') {
-        spawnBossAttack(boss, true);
-        boss.beatCooldown = Math.min(boss.beatCooldown, 24);
-        return true;
-    }
-
     boss.flashTimer = 12;
     boss.hp = Math.max(0, boss.hp - 1);
     game.score += 30 + (judgment === 'perfect' ? 10 * game.comboMultiplier : 4 * game.comboMultiplier);
@@ -3751,15 +3743,6 @@ function attemptWallHit(wall) {
     if (!wall || wall.destroyed || wall.missed || wall.windowStart < 0) return false;
     var progress = wall.windowStart / wall.windowDuration;
     var judgment = game.attractMode ? 'good' : timingJudgment(progress);
-    if (judgment === 'miss') {
-        registerTimingJudgment('miss');
-        wall.missed = true;
-        wall.windowStart = -1;
-        game.pendingFailTimer = 24;
-        ui.target.classList.add('hidden');
-        return true;
-    }
-
     music.playSfx('wall', judgment === 'perfect');
     if (!game.attractMode) registerTimingJudgment(judgment, true);
     wall.destroyed = true;
