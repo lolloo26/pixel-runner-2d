@@ -50,9 +50,21 @@ function scaleCanvas() {
     var groundShift = GROUND_Y - previousGround;
     if (typeof player !== 'undefined' && (groundShift !== 0 || W !== previousWidth)) {
         if (player.grounded) player.y += groundShift;
-        for (var i = 0; i < obstacles.length; i++) obstacles[i].y += groundShift;
+        for (var i = 0; i < obstacles.length; i++) {
+            obstacles[i].y += groundShift;
+            if (obstacles[i].meteorite) obstacles[i].impactY += groundShift;
+            if (obstacles[i].stalactite) obstacles[i].drawHeight = GROUND_Y - 8;
+        }
         for (var i = 0; i < coins.length; i++) coins[i].y += groundShift;
         for (var j = 0; j < walls.length; j++) walls[j].h = GROUND_Y;
+        if (typeof platforms !== 'undefined') {
+            for (var k = 0; k < platforms.length; k++) platforms[k].y += groundShift;
+        }
+        if (typeof sandParticles !== 'undefined') {
+            for (var m = 0; m < sandParticles.length; m++) {
+                sandParticles[m].y = Math.max(6, Math.min(GROUND_Y - 6, sandParticles[m].y + groundShift));
+            }
+        }
         initBgElements();
     }
     canvas.style.width = cw + 'px';
@@ -390,6 +402,7 @@ var ui = {
     levelProgress: document.getElementById('level-progress'),
     levelProgressFill: document.getElementById('level-progress-fill'),
     levelProgressValue: document.getElementById('level-progress-value'),
+    levelProgressBiome: document.querySelector('#level-progress .level-progress-heading span:first-child'),
     over:         document.getElementById('game-over'),
     pause:        document.getElementById('pause-menu'),
     musicToggle:  document.getElementById('music-toggle'),
@@ -590,6 +603,8 @@ var game = {
     lastCoin: 0,
     lastWall: 0,
     wallActive: false,
+    lavaHazard: null,
+    sandStormActive: false,
     screenShake: 0,
     flashAlpha: 0,
     autoJump: false,
@@ -1213,6 +1228,8 @@ var player = {
     jumpTimer: 0,
     jumpBuffer: 0,
     fallingInPit: false,
+    platform: null,
+    slideMomentum: 0,
     animFrame: 0,
     animTimer: 0
 };
@@ -1222,9 +1239,11 @@ var obstacles = [];
 var coins = [];
 var walls = [];
 var pits = [];
+var platforms = [];
 var stars = [];
 var particles = [];
 var atmParticles = [];
+var sandParticles = [];
 var bgLayers = { far: [], mid: [], stars: [] };
 var loopActive = false;
 var pointerStarts = Object.create(null);
@@ -1564,6 +1583,79 @@ function spawnLevelObstacle(event) {
     });
 }
 
+function spawnLevelPlatform(event) {
+    var height = Math.max(34, Math.min(event.height || 48, GROUND_Y - 28));
+    platforms.push({
+        x: W + 8,
+        y: GROUND_Y - height,
+        w: Math.max(48, event.width || 76),
+        h: 5
+    });
+}
+
+function spawnLevelMeteorite(event) {
+    var height = Math.max(8, Math.min(event.height || 12, 16));
+    var clearance = Math.max(0, Math.min(event.clearance || 0, 12));
+    obstacles.push({
+        x: W + 8,
+        y: -height,
+        w: Math.max(8, event.width || 12),
+        h: height,
+        meteorite: true,
+        phase: 'warning',
+        warningFrames: event.warningFrames || 36,
+        impactY: GROUND_Y - clearance - height,
+        fallSpeed: event.fallSpeed || 6,
+        impactFrames: event.impactFrames || 58,
+        color: [255, 104, 35],
+        dark: [145, 38, 22],
+        highlight: [255, 224, 82]
+    });
+}
+
+function spawnLevelStalactite(event) {
+    var width = Math.max(12, Math.min(event.width || 16, 22));
+    var clearance = Math.max(6, Math.min(event.clearance || 8, 14));
+    var height = Math.max(20, Math.min(event.height || 26, 34));
+    obstacles.push({
+        x: W + 8,
+        y: GROUND_Y - clearance - height,
+        w: width,
+        h: height,
+        stalactite: true,
+        drawHeight: GROUND_Y - clearance,
+        color: [117, 207, 240],
+        dark: [45, 99, 145],
+        highlight: [225, 251, 255]
+    });
+}
+
+function startSandStorm() {
+    game.sandStormActive = true;
+    sandParticles = [];
+    for (var i = 0; i < 38; i++) {
+        sandParticles.push({
+            x: rand(W * 0.48, W),
+            y: rand(6, GROUND_Y - 6),
+            speed: rand(0.7, 2.2),
+            size: rand(1, 3),
+            alpha: rand(0.12, 0.42)
+        });
+    }
+}
+
+function stopSandStorm() {
+    game.sandStormActive = false;
+    sandParticles = [];
+}
+
+function lavaHeight() {
+    var lava = game.lavaHazard;
+    if (!lava || !lava.active) return 0;
+    var riseProgress = (game.levelDistance - lava.startDistance - lava.warningDistance) / lava.riseDistance;
+    return Math.max(0, Math.min(1, riseProgress)) * lava.maxHeight;
+}
+
 function spawnLevelCoins(event) {
     var count = event.count || 5;
     var y = Math.max(4, Math.min(event.y, GROUND_Y - 8));
@@ -1601,6 +1693,26 @@ function spawnLevelStar(event) {
 function spawnLevelEvent(event) {
     if (event.type === 'obstacle') {
         spawnLevelObstacle(event);
+    } else if (event.type === 'meteorite') {
+        spawnLevelMeteorite(event);
+    } else if (event.type === 'stalactite') {
+        spawnLevelStalactite(event);
+    } else if (event.type === 'platform') {
+        spawnLevelPlatform(event);
+    } else if (event.type === 'lavaStart') {
+        game.lavaHazard = {
+            active: true,
+            startDistance: game.levelDistance,
+            warningDistance: Math.max(0, event.warningDistance || 0),
+            riseDistance: Math.max(1, event.riseDistance || 1),
+            maxHeight: Math.max(1, Math.min(event.maxHeight || 42, GROUND_Y - 40))
+        };
+    } else if (event.type === 'lavaEnd') {
+        game.lavaHazard = null;
+    } else if (event.type === 'stormStart') {
+        startSandStorm();
+    } else if (event.type === 'stormEnd') {
+        stopSandStorm();
     } else if (event.type === 'coins') {
         spawnLevelCoins(event);
     } else if (event.type === 'star') {
@@ -1626,6 +1738,38 @@ function updateLevelPits() {
         pits[i].x -= game.speed;
         if (pits[i].x + pits[i].w < 0) pits.splice(i, 1);
     }
+}
+
+function updateLevelPlatforms() {
+    for (var i = platforms.length - 1; i >= 0; i--) {
+        platforms[i].x -= game.speed;
+        if (platforms[i].x + platforms[i].w < 0) platforms.splice(i, 1);
+    }
+}
+
+function updateSandStorm() {
+    if (!game.sandStormActive) return;
+    for (var i = 0; i < sandParticles.length; i++) {
+        var particle = sandParticles[i];
+        particle.x -= game.speed * particle.speed;
+        particle.y += Math.sin(game.frameCount * 0.08 + i) * 0.25;
+        if (particle.x < W * 0.46) {
+            particle.x = W + rand(0, W * 0.22);
+            particle.y = rand(6, GROUND_Y - 6);
+        }
+    }
+}
+
+function playerSurfaceY() {
+    return player.platform ? player.platform.y : GROUND_Y;
+}
+
+function playerCollisionBounds() {
+    var height = player.crouching ? 6 : PH;
+    return {
+        y: player.crouching ? playerSurfaceY() - height : player.y,
+        h: height
+    };
 }
 
 function collectLevelStar(star) {
@@ -1659,9 +1803,8 @@ function updateLevelStars() {
         }
         if (star.collected) continue;
 
-        var playerHeight = player.crouching ? 6 : PH;
-        var playerY = player.crouching ? GROUND_Y - 6 : player.y;
-        if (aabb(player.x + 1, playerY, player.w - 2, playerHeight, star.x, star.y, star.w, star.h)) {
+        var playerBounds = playerCollisionBounds();
+        if (aabb(player.x + 1, playerBounds.y, player.w - 2, playerBounds.h, star.x, star.y, star.w, star.h)) {
             collectLevelStar(star);
         }
     }
@@ -1799,6 +1942,8 @@ function resetPlayer() {
     player.vy = 0;
     player.grounded = true;
     player.crouching = false;
+    player.platform = null;
+    player.slideMomentum = 0;
     player.jumpHeld = false;
     player.jumpTimer = 0;
     player.jumpBuffer = 0;
@@ -1843,8 +1988,12 @@ function initializeRun(attractMode, levelData) {
     coins = [];
     walls = [];
     pits = [];
+    platforms = [];
     stars = [];
     particles = [];
+    sandParticles = [];
+    game.lavaHazard = null;
+    game.sandStormActive = false;
     keys = {};
     clearTouchInputs();
     initBgElements();
@@ -1861,6 +2010,7 @@ function initializeRun(attractMode, levelData) {
     ui.levelProgressFill.style.width = '0%';
     ui.levelProgressValue.textContent = '0%';
     ui.levelProgress.setAttribute('aria-valuenow', '0');
+    ui.levelProgressBiome.textContent = levelData ? levelData.name : 'GIUNGLA';
     ui.duck.classList.toggle('active', !attractMode && isMobileTouch());
     ui.prompt.classList.add('hidden');
     ui.prompt.classList.remove('hit-good');
@@ -2406,12 +2556,25 @@ function updatePlayer() {
         keys.ArrowDown = game.autoCrouch;
     }
 
+    var previousY = player.y;
+    if (player.grounded && player.platform) {
+        var stillOnPlatform = platforms.indexOf(player.platform) >= 0 &&
+            player.x + player.w > player.platform.x && player.x < player.platform.x + player.platform.w;
+        if (stillOnPlatform) {
+            player.y = player.platform.y - PH;
+        } else {
+            player.platform = null;
+            player.grounded = false;
+        }
+    }
+
     var jumpInput = keys['Space'] || keys['ArrowUp'] || keys['KeyW'] || hasActivePointers(touchJumpPointers) || player.jumpBuffer > 0;
     if (player.jumpBuffer > 0) player.jumpBuffer--;
     if (jumpInput) {
         if (player.grounded) {
             player.vy = JUMP_FORCE;
             player.grounded = false;
+            player.platform = null;
             player.jumpHeld = true;
             player.jumpTimer = 0;
             music.playSfx('jump');
@@ -2424,13 +2587,20 @@ function updatePlayer() {
     }
 
     var downInput = keys['ArrowDown'] || keys['KeyS'] || hasActivePointers(touchDownPointers);
-    if (downInput) {
-        player.crouching = player.grounded;
-        if (!player.grounded) {
-            player.vy += 2.2;
+    var glacierLevel = game.levelData && game.levelData.id === 'glacier';
+    if (glacierLevel) {
+        if (downInput && player.grounded) {
+            player.slideMomentum = Math.min(1, player.slideMomentum + 0.12);
+        } else if (!downInput) {
+            player.slideMomentum = Math.max(0, player.slideMomentum - 0.025);
         }
+        player.crouching = player.grounded && (downInput || player.slideMomentum > 0.03);
     } else {
-        player.crouching = false;
+        player.slideMomentum = 0;
+        player.crouching = player.grounded && downInput;
+    }
+    if (downInput && !player.grounded) {
+        player.vy += 2.2;
     }
 
     if (!player.grounded) {
@@ -2443,18 +2613,46 @@ function updatePlayer() {
     var ph = player.crouching ? 6 : PH;
     var floor = GROUND_Y - ph;
     var overPit = game.levelData && playerOverPit();
-    if (player.y >= floor && !overPit && !player.fallingInPit) {
+    var landedPlatform = null;
+    if (!player.grounded && player.vy >= 0) {
+        for (var i = 0; i < platforms.length; i++) {
+            var platform = platforms[i];
+            var horizontalOverlap = player.x + player.w > platform.x && player.x < platform.x + platform.w;
+            if (horizontalOverlap && previousY + PH <= platform.y && player.y + PH >= platform.y) {
+                landedPlatform = platform;
+                break;
+            }
+        }
+    }
+
+    if (landedPlatform) {
+        player.platform = landedPlatform;
+        player.y = landedPlatform.y - PH;
+        player.vy = 0;
+        player.grounded = true;
+    } else if (player.y >= floor && !overPit && !player.fallingInPit) {
         player.y = floor;
         player.vy = 0;
         player.grounded = true;
+        player.platform = null;
     } else if (overPit && player.y >= floor) {
         player.fallingInPit = true;
         player.grounded = false;
+        player.platform = null;
     }
 
     if (player.fallingInPit) {
         player.grounded = false;
         if (player.y > H) {
+            gameOver();
+            return;
+        }
+    }
+
+    if (game.levelData && game.levelData.id === 'volcano' && game.lavaHazard) {
+        var lavaBounds = playerCollisionBounds();
+        if (lavaBounds.y + lavaBounds.h > GROUND_Y - lavaHeight()) {
+            game.screenShake = 9;
             gameOver();
             return;
         }
@@ -2495,6 +2693,24 @@ function updateObstacles() {
         var o = obstacles[i];
         o.x -= game.speed;
         if (o.flying) o.wingTimer++;
+        if (o.meteorite) {
+            if (o.phase === 'warning') {
+                o.warningFrames--;
+                if (o.warningFrames <= 0) o.phase = 'falling';
+            } else if (o.phase === 'falling') {
+                o.y += o.fallSpeed;
+                if (o.y >= o.impactY) {
+                    o.y = o.impactY;
+                    o.phase = 'impact';
+                }
+            } else if (o.phase === 'impact') {
+                o.impactFrames--;
+                if (o.impactFrames <= 0) {
+                    obstacles.splice(i, 1);
+                    continue;
+                }
+            }
+        }
         if (o.x + o.w < 0) {
             obstacles.splice(i, 1);
             continue;
@@ -2505,9 +2721,9 @@ function updateObstacles() {
         }
         if (o.transitionGhost) continue;
 
-        var ph = player.crouching ? 6 : PH;
-        var py = player.crouching ? GROUND_Y - 6 : player.y;
-        if (aabb(player.x + 2, py + 1, player.w - 4, ph - 2, o.x, o.y, o.w, o.h)) {
+        if (o.meteorite && o.phase === 'warning') continue;
+        var playerBounds = playerCollisionBounds();
+        if (aabb(player.x + 2, playerBounds.y + 1, player.w - 4, playerBounds.h - 2, o.x, o.y, o.w, o.h)) {
             game.screenShake = 9;
             gameOver();
             return;
@@ -2536,9 +2752,8 @@ function updateCoins() {
             continue;
         }
 
-        var ph = player.crouching ? 6 : PH;
-        var py = player.crouching ? GROUND_Y - 6 : player.y;
-        if (aabb(player.x, py, player.w, ph, c.x, c.y, c.w, c.h)) {
+        var playerBounds = playerCollisionBounds();
+        if (aabb(player.x, playerBounds.y, player.w, playerBounds.h, c.x, c.y, c.w, c.h)) {
             game.sessionCoins++;
             music.playSfx('coin');
             spawnCoinParticles(c.x + 4, c.y + 4);
@@ -2775,9 +2990,8 @@ function updateWalls() {
             return;
         }
 
-        var ph = player.crouching ? 6 : PH;
-        var py = player.crouching ? GROUND_Y - 6 : player.y;
-        if (!wall.destroyed && aabb(player.x + 2, py, player.w - 4, ph, wall.x, 0, wall.w, GROUND_Y)) {
+        var playerBounds = playerCollisionBounds();
+        if (!wall.destroyed && aabb(player.x + 2, playerBounds.y, player.w - 4, playerBounds.h, wall.x, 0, wall.w, GROUND_Y)) {
             ui.prompt.classList.add('hidden');
             game.screenShake = 11;
             gameOver();
@@ -2859,6 +3073,8 @@ function update(dt) {
         game.levelDistance += game.speed;
         updateLevelEvents();
         updateLevelPits();
+        updateLevelPlatforms();
+        updateSandStorm();
         updateLevelProgress();
     } else {
         var targetSpeed = game.baseSpeed + (5.2 - game.baseSpeed) * (1 - Math.exp(-game.score / 1100));
@@ -3104,7 +3320,7 @@ function drawPlayer() {
     var colors = getSkinColors(skinDef);
     var outlineColor = skinDef.colors.outline;
     var sprite;
-    var py = player.crouching ? GROUND_Y - 6 : player.y;
+    var py = player.crouching ? playerSurfaceY() - 6 : player.y;
 
     if (player.crouching) {
         sprite = PLAYER_CROUCH;
@@ -3180,7 +3396,38 @@ function drawObstacle(o) {
     var dk = o.dark;
     var hi = o.highlight;
 
-    if (o.flying) {
+    if (o.stalactite) {
+        var tipY = o.drawHeight;
+        ctx.fillStyle = rgb(dk);
+        ctx.beginPath();
+        ctx.moveTo(Math.floor(o.x), 0);
+        ctx.lineTo(Math.floor(o.x + o.w), 0);
+        ctx.lineTo(Math.floor(o.x + o.w / 2), Math.floor(tipY));
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = rgb(c);
+        ctx.beginPath();
+        ctx.moveTo(Math.floor(o.x + 2), 0);
+        ctx.lineTo(Math.floor(o.x + o.w - 2), 0);
+        ctx.lineTo(Math.floor(o.x + o.w / 2), Math.floor(tipY - 5));
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = rgb(hi);
+        ctx.fillRect(Math.floor(o.x + 3), 4, 2, Math.max(2, Math.floor(tipY * 0.35)));
+        ctx.fillRect(Math.floor(o.x + o.w / 2 - 1), Math.floor(tipY - 7), 3, 3);
+    } else if (o.meteorite) {
+        ctx.fillStyle = rgb(dk);
+        ctx.fillRect(Math.floor(o.x + 2), Math.floor(o.y + 2), Math.max(2, o.w - 3), Math.max(2, o.h - 3));
+        ctx.fillStyle = rgb(c);
+        ctx.fillRect(Math.floor(o.x + 1), Math.floor(o.y + 1), Math.max(2, o.w - 3), Math.max(2, o.h - 3));
+        ctx.fillStyle = rgb(hi);
+        ctx.fillRect(Math.floor(o.x + 2), Math.floor(o.y), Math.max(2, o.w - 5), 2);
+        ctx.fillRect(Math.floor(o.x + 2), Math.floor(o.y + o.h - 2), 2, 2);
+        if (o.phase === 'falling') {
+            ctx.fillStyle = 'rgba(255,130,38,0.55)';
+            ctx.fillRect(Math.floor(o.x + 3), Math.floor(o.y - 5), Math.max(2, o.w - 6), 5);
+        }
+    } else if (o.flying) {
         ctx.fillStyle = rgb(dk);
         ctx.fillRect(Math.floor(o.x + 1), Math.floor(o.y + 1), o.w, o.h);
         ctx.fillStyle = rgb(c);
@@ -3229,6 +3476,94 @@ function drawObstacles() {
             drawObstacle(obstacles[i]);
         }
     }
+}
+
+function drawLava() {
+    var lava = game.lavaHazard;
+    if (!lava || !lava.active || !game.levelData || game.levelData.id !== 'volcano') return;
+    var height = lavaHeight();
+    var surface = GROUND_Y - height;
+    ctx.save();
+    if (height > 0) {
+        ctx.fillStyle = 'rgba(118,24,12,0.96)';
+        ctx.fillRect(0, Math.floor(surface), W, H - Math.floor(surface));
+        ctx.fillStyle = 'rgba(255,89,20,0.9)';
+        ctx.fillRect(0, Math.floor(surface), W, 2);
+        ctx.fillStyle = 'rgba(255,196,57,0.86)';
+        var waveOffset = Math.floor(game.frameCount * 0.7) % 12;
+        for (var x = -waveOffset; x < W; x += 12) {
+            ctx.fillRect(x, Math.floor(surface) + 2, 6, 1);
+        }
+        ctx.fillStyle = 'rgba(255,117,30,0.4)';
+        for (var i = 0; i < W; i += 17) {
+            var bubbleY = Math.floor(surface + 5 + Math.abs(Math.sin(game.frameCount * 0.06 + i)) * Math.min(height - 2, 12));
+            ctx.fillRect(i + Math.floor(Math.sin(game.frameCount * 0.03 + i) * 2), bubbleY, 2, 2);
+        }
+    } else {
+        ctx.fillStyle = 'rgba(255,120,28,0.7)';
+        ctx.fillRect(0, GROUND_Y - 2, W, 2);
+    }
+
+    var warningRemaining = lava.warningDistance - (game.levelDistance - lava.startDistance);
+    if (warningRemaining > 0) {
+        var pulse = Math.sin(game.frameCount * 0.2) * 0.25 + 0.75;
+        ctx.fillStyle = rgba([255, 218, 91], pulse);
+        ctx.font = 'bold 8px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('LAVA IN ARRIVO', W / 2, Math.max(18, GROUND_Y - 12));
+    }
+    ctx.restore();
+}
+
+function drawLevelPlatforms() {
+    for (var i = 0; i < platforms.length; i++) {
+        var platform = platforms[i];
+        ctx.fillStyle = '#5c2018';
+        ctx.fillRect(Math.floor(platform.x), Math.floor(platform.y), platform.w, platform.h);
+        ctx.fillStyle = '#ffb84a';
+        ctx.fillRect(Math.floor(platform.x), Math.floor(platform.y), platform.w, 2);
+        ctx.fillStyle = '#ffe19a';
+        ctx.fillRect(Math.floor(platform.x + 4), Math.floor(platform.y), 7, 1);
+        ctx.fillRect(Math.floor(platform.x + platform.w - 13), Math.floor(platform.y), 7, 1);
+    }
+}
+
+function drawMeteoriteWarnings() {
+    for (var i = 0; i < obstacles.length; i++) {
+        var meteorite = obstacles[i];
+        if (!meteorite.meteorite || meteorite.phase !== 'warning') continue;
+        var pulse = Math.sin(game.frameCount * 0.35) * 0.3 + 0.7;
+        var centerX = Math.floor(meteorite.x + meteorite.w / 2);
+        ctx.fillStyle = rgba([255, 75, 35], pulse * 0.25);
+        ctx.fillRect(centerX - 1, 13, 3, Math.max(1, meteorite.impactY - 16));
+        ctx.fillStyle = rgba([255, 230, 120], pulse);
+        ctx.fillRect(centerX - 5, 5, 11, 2);
+        ctx.fillRect(centerX - 3, 3, 7, 6);
+        ctx.fillStyle = '#9b2619';
+        ctx.fillRect(centerX - 1, 4, 3, 4);
+        ctx.fillRect(centerX, 9, 1, 2);
+    }
+}
+
+function drawSandStorm() {
+    if (!game.sandStormActive || !game.levelData || game.levelData.id !== 'desert') return;
+    var boundary = Math.floor(W * 0.46);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(boundary, 0, W - boundary, H);
+    ctx.clip();
+    var haze = ctx.createLinearGradient(boundary, 0, W, 0);
+    haze.addColorStop(0, 'rgba(194,145,73,0.02)');
+    haze.addColorStop(0.55, 'rgba(194,145,73,0.12)');
+    haze.addColorStop(1, 'rgba(226,177,96,0.23)');
+    ctx.fillStyle = haze;
+    ctx.fillRect(boundary, 0, W - boundary, H);
+    for (var i = 0; i < sandParticles.length; i++) {
+        var particle = sandParticles[i];
+        ctx.fillStyle = rgba([255, 211, 132], particle.alpha);
+        ctx.fillRect(Math.floor(particle.x), Math.floor(particle.y), Math.ceil(particle.size * 2), 1);
+    }
+    ctx.restore();
 }
 
 function drawCoins() {
@@ -3312,11 +3647,15 @@ function draw() {
     }
 
     drawBackground();
+    drawSandStorm();
     drawAtmParticles();
     drawGround();
     drawLevelPits();
+    drawLava();
+    drawLevelPlatforms();
     drawWalls();
     drawObstacles();
+    drawMeteoriteWarnings();
     drawCoins();
     drawLevelStars();
     drawPlayer();
