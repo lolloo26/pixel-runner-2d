@@ -10,12 +10,15 @@ window.PIXEL_RUNNER_LEVELS = {
         replayReward: 100,
         events: [
             { at: 360, type: 'coins', count: 5, y: 112 },
+            { at: 760, type: 'star', index: 0, y: 96 },
             { at: 880, type: 'obstacle', width: 6, height: 8 },
+            { at: 1450, type: 'star', index: 1, y: 98 },
             { at: 1480, type: 'pit', width: 22 },
             { at: 2070, type: 'coins', count: 6, y: 108 },
             { at: 2740, type: 'obstacle', width: 7, height: 13 },
             { at: 3350, type: 'wall' },
             { at: 4160, type: 'coins', count: 5, y: 120 },
+            { at: 4550, type: 'star', index: 2, y: 96 },
             { at: 4780, type: 'pit', width: 24 },
             { at: 5480, type: 'obstacle', width: 7, height: 9, flying: true, y: 128 },
             { at: 6120, type: 'coins', count: 6, y: 106 },
@@ -38,16 +41,19 @@ window.PIXEL_RUNNER_LEVELS = {
         replayReward: 100,
         events: [
             { at: 380, type: 'coins', count: 5, y: 112 },
+            { at: 820, type: 'star', index: 0, y: 96 },
             { at: 950, type: 'obstacle', width: 7, height: 9 },
             { at: 1620, type: 'coins', count: 6, y: 106 },
             { at: 2460, type: 'obstacle', width: 7, height: 14 },
             { at: 3420, type: 'wall' },
             { at: 4360, type: 'coins', count: 5, y: 118 },
+            { at: 5300, type: 'star', index: 1, y: 96 },
             { at: 5350, type: 'pit', width: 24 },
             { at: 6270, type: 'obstacle', width: 8, height: 10 },
             { at: 7290, type: 'wall' },
             { at: 8300, type: 'coins', count: 6, y: 108 },
             { at: 9410, type: 'obstacle', width: 7, height: 14 },
+            { at: 10100, type: 'star', index: 2, y: 96 },
             { at: 10450, type: 'wall' },
             { at: 11600, type: 'obstacle', width: 7, height: 9 }
         ]
@@ -63,7 +69,9 @@ window.PIXEL_RUNNER_LEVELS = {
         replayReward: 100,
         events: [
             { at: 420, type: 'coins', count: 5, y: 110 },
+            { at: 920, type: 'star', index: 0, y: 94 },
             { at: 1050, type: 'obstacle', width: 7, height: 10 },
+            { at: 1760, type: 'star', index: 1, y: 96 },
             { at: 1810, type: 'pit', width: 24 },
             { at: 2690, type: 'coins', count: 6, y: 106 },
             { at: 3640, type: 'wall' },
@@ -73,6 +81,7 @@ window.PIXEL_RUNNER_LEVELS = {
             { at: 7790, type: 'wall' },
             { at: 8910, type: 'obstacle', width: 8, height: 10 },
             { at: 10050, type: 'coins', count: 6, y: 108 },
+            { at: 11000, type: 'star', index: 2, y: 94 },
             { at: 11200, type: 'wall' },
             { at: 12380, type: 'obstacle', width: 7, height: 14 }
         ]
@@ -88,9 +97,11 @@ window.PIXEL_RUNNER_LEVELS = {
         replayReward: 100,
         events: [
             { at: 460, type: 'coins', count: 5, y: 112 },
+            { at: 1000, type: 'star', index: 0, y: 96 },
             { at: 1120, type: 'obstacle', width: 7, height: 10 },
             { at: 1980, type: 'wall' },
             { at: 2920, type: 'coins', count: 6, y: 108 },
+            { at: 3850, type: 'star', index: 1, y: 94 },
             { at: 3890, type: 'pit', width: 24 },
             { at: 4910, type: 'obstacle', width: 8, height: 14 },
             { at: 5960, type: 'wall' },
@@ -100,6 +111,7 @@ window.PIXEL_RUNNER_LEVELS = {
             { at: 10380, type: 'pit', width: 26 },
             { at: 11550, type: 'coins', count: 6, y: 106 },
             { at: 12730, type: 'obstacle', width: 8, height: 14 },
+            { at: 13780, type: 'star', index: 2, y: 94 },
             { at: 13900, type: 'wall' }
         ]
     }

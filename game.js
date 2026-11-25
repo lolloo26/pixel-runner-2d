@@ -253,12 +253,17 @@ var SKINS = [
     { id: 'gold',    name: 'DORATO',    rarity: 'legendary', colors: { body: '#ffd700', eye: '#ff4400', outline: '#886600' } },
     { id: 'piggy',   name: 'MAIALINO',  rarity: 'legendary', colors: { body: '#f48aaa', eye: '#50243d', outline: '#a34263' } },
     { id: 'matrix',  name: 'MATRIX',    rarity: 'legendary', colors: { body: '#07140c', eye: '#39ff14', outline: '#0a5b20' } },
-    { id: 'frosted', name: 'TRASPARENTE OPACA', rarity: 'secret', colors: { body: 'rgba(190,235,255,0.68)', eye: 'rgba(255,255,255,0.95)', outline: 'rgba(225,250,255,0.86)' } }
+    { id: 'frosted', name: 'TRASPARENTE OPACA', rarity: 'secret', colors: { body: 'rgba(190,235,255,0.68)', eye: 'rgba(255,255,255,0.95)', outline: 'rgba(225,250,255,0.86)' } },
+    { id: 'star-jungle', name: 'CUSTODE VERDE', rarity: 'star', collectionOnly: true, starLevel: 'jungle', colors: { body: '#66d879', eye: '#f7ff9a', outline: '#135c2b' } },
+    { id: 'star-volcano', name: 'CUORE MAGMATICO', rarity: 'star', collectionOnly: true, starLevel: 'volcano', colors: { body: '#ff6938', eye: '#fff24a', outline: '#84230d' } },
+    { id: 'star-glacier', name: 'SPIRITO ARTICO', rarity: 'star', collectionOnly: true, starLevel: 'glacier', colors: { body: '#a9eaff', eye: '#ffffff', outline: '#286b9c' } },
+    { id: 'star-desert', name: 'MIRAGGIO NEON', rarity: 'star', collectionOnly: true, starLevel: 'desert', colors: { body: '#f3c45a', eye: '#ff6bf2', outline: '#823f8e' } },
+    { id: 'star-master', name: 'MAESTRO SUPREMO', rarity: 'star', collectionOnly: true, starTotal: 12, colors: { body: '#e8d9ff', eye: '#fff26b', outline: '#573697' } }
 ];
 
 var RARITY_WEIGHTS = { common: 40, rare: 25, epic: 15, legendary: 5 };
-var RARITY_LABELS  = { common: 'COMUNE', rare: 'RARO', epic: 'EPICO', legendary: 'LEGGENDARIO', secret: '???' };
-var RARITY_COLORS  = { common: '#aaaaaa', rare: '#55aaff', epic: '#cc55ff', legendary: '#ffd700', secret: '#bdf7ff' };
+var RARITY_LABELS  = { common: 'COMUNE', rare: 'RARO', epic: 'EPICO', legendary: 'LEGGENDARIO', secret: '???', star: 'STELLE' };
+var RARITY_COLORS  = { common: '#aaaaaa', rare: '#55aaff', epic: '#cc55ff', legendary: '#ffd700', secret: '#bdf7ff', star: '#ffdf74' };
 var DUPE_REFUND    = { common: 240, rare: 480, epic: 840, legendary: 1200, secret: 2400 };
 var CHEST_COST = 1200;
 var GOLD_SLOT_CHANCE = 0.05;
@@ -361,6 +366,17 @@ var COIN_ANIM2 = [
 var COIN_ANIM3 = COIN_ANIM1;
 
 var COIN_FRAMES = [COIN_SPRITE, COIN_ANIM1, COIN_ANIM2, COIN_ANIM3];
+var STAR_SPRITE = [
+    [0,0,0,0,1,0,0,0,0],
+    [0,0,0,1,2,1,0,0,0],
+    [0,0,0,1,2,1,0,0,0],
+    [1,1,1,1,1,1,1,1,1],
+    [0,1,2,1,1,1,2,1,0],
+    [0,0,1,1,1,1,1,0,0],
+    [0,0,1,3,1,3,1,0,0],
+    [0,1,3,0,0,0,3,1,0],
+    [1,3,0,0,0,0,0,3,1]
+];
 
 var LEVEL_IDS = window.PIXEL_RUNNER_LEVEL_ORDER;
 var LEVEL_PROGRESS_KEY = 'pr_level_progress';
@@ -434,7 +450,7 @@ function createDefaultLevelProgress() {
         levels[LEVEL_IDS[i]] = {
             completed: false,
             completions: 0,
-            stars: 0
+            stars: [false, false, false]
         };
     }
     return {
@@ -472,11 +488,20 @@ function loadLevelProgress() {
         var completions = Number.isInteger(storedLevel.completions) && storedLevel.completions >= 0 ?
             storedLevel.completions : 0;
         var completed = storedLevel.completed === true;
+        var stars = [false, false, false];
+        if (Array.isArray(storedLevel.stars)) {
+            for (var starIndex = 0; starIndex < stars.length; starIndex++) {
+                stars[starIndex] = storedLevel.stars[starIndex] === true;
+            }
+        } else if (Number.isInteger(storedLevel.stars) && storedLevel.stars > 0) {
+            for (var oldStarIndex = 0; oldStarIndex < stars.length; oldStarIndex++) {
+                stars[oldStarIndex] = oldStarIndex < Math.min(3, storedLevel.stars);
+            }
+        }
         progress.levels[id] = {
             completed: completed,
             completions: completed ? Math.max(1, completions) : completions,
-            stars: Number.isInteger(storedLevel.stars) ?
-                Math.max(0, Math.min(3, storedLevel.stars)) : 0
+            stars: stars
         };
     }
     return progress;
@@ -489,6 +514,58 @@ function persistLevelProgress() {
 }
 
 if (localStorage.getItem(LEVEL_PROGRESS_KEY) === null) persistLevelProgress();
+
+function getCollectedStarCount(levelId) {
+    var levels = levelId ? [levelProgress.levels[levelId]] : LEVEL_IDS.map(function(id) {
+        return levelProgress.levels[id];
+    });
+    var total = 0;
+    for (var i = 0; i < levels.length; i++) {
+        if (!levels[i]) continue;
+        total += levels[i].stars.filter(Boolean).length;
+    }
+    return total;
+}
+
+function starRequirementMet(skin) {
+    if (skin.starLevel) {
+        var level = levelProgress.levels[skin.starLevel];
+        return !!level && level.stars.every(Boolean);
+    }
+    return skin.starTotal ? getCollectedStarCount() >= skin.starTotal : false;
+}
+
+function syncStarSkinUnlocks() {
+    var changed = false;
+    for (var i = 0; i < SKINS.length; i++) {
+        var skin = SKINS[i];
+        if (!skin.collectionOnly || !starRequirementMet(skin) || save.skins.indexOf(skin.id) >= 0) continue;
+        save.skins.push(skin.id);
+        changed = true;
+    }
+    if (changed) persist();
+}
+
+syncStarSkinUnlocks();
+
+function starSkinRequirement(skin) {
+    if (skin.starLevel) {
+        var level = window.PIXEL_RUNNER_LEVELS[skin.starLevel];
+        var current = getCollectedStarCount(skin.starLevel);
+        var levelName = level.name.charAt(0) + level.name.slice(1).toLowerCase();
+        return {
+            current: current,
+            total: 3,
+            text: 'Requisito: 3/3 stelle in ' + levelName
+        };
+    }
+    var total = getCollectedStarCount();
+    return {
+        current: total,
+        total: 12,
+        text: 'Requisito: 12/12 stelle totali'
+    };
+}
 
 var game = {
     running: false,
@@ -771,6 +848,10 @@ var music = (function() {
         } else if (type === 'coin') {
             playTone(880, 1080, now, 0.12, 'sine', 0.12);
             playTone(1320, 1600, now + 0.065, 0.14, 'sine', 0.105);
+        } else if (type === 'star') {
+            playTone(1046, 1568, now, 0.13, 'sine', 0.11);
+            playTone(1568, 2093, now + 0.055, 0.12, 'sine', 0.1);
+            playTone(2093, 2637, now + 0.11, 0.1, 'sine', 0.09);
         } else if (type === 'wall') {
             playTone(150, 48, now, 0.17, 'sine', 0.24);
             playTone(260, 100, now, 0.12, 'triangle', 0.12);
@@ -1141,6 +1222,7 @@ var obstacles = [];
 var coins = [];
 var walls = [];
 var pits = [];
+var stars = [];
 var particles = [];
 var atmParticles = [];
 var bgLayers = { far: [], mid: [], stars: [] };
@@ -1327,6 +1409,67 @@ function drawSkinOverlay(context, x, y, skinDef, scale, crouching, frame) {
         paintPixel(6, 3, '#ffffff');
         paintPixel(2, 6, '#dffaff');
         paintPixel(7, 7, '#ffffff');
+    } else if (skinDef.id === 'star-jungle') {
+        var jungleRow = crouching ? 3 : 5;
+        paintPixel(2, 1, '#218b43');
+        paintPixel(3, 0, '#9cff68');
+        paintPixel(4, 1, '#62e66d');
+        paintPixel(5, 0, '#baff70');
+        paintPixel(6, 1, '#36b855');
+        paintPixel(2, jungleRow, '#ffe178');
+        paintPixel(3, jungleRow + 1, '#2b8a41');
+        paintPixel(5, jungleRow, '#d9ff7b');
+        paintPixel(6, jungleRow + 1, '#2b8a41');
+        paintPixel(7, 4 + Math.floor(frame / 10) % 2, '#fff0a0');
+    } else if (skinDef.id === 'star-volcano') {
+        var volcanoRow = crouching ? 3 : 5;
+        paintPixel(2, 1, '#b53019');
+        paintPixel(3, 0, '#ffb52e');
+        paintPixel(4, 1, '#ff5a24');
+        paintPixel(5, 0, '#ffe05c');
+        paintPixel(6, 1, '#b53019');
+        paintPixel(3, volcanoRow, '#ffbd39');
+        paintPixel(4, volcanoRow + 1, '#ff4a24');
+        paintPixel(5, volcanoRow, '#fff06a');
+        paintPixel(6, volcanoRow + 1, '#e63720');
+        paintPixel(7, 5 + Math.floor(frame / 7) % 2, '#ffdb4a');
+    } else if (skinDef.id === 'star-glacier') {
+        var glacierRow = crouching ? 3 : 5;
+        paintPixel(3, 1, '#7ce9ff');
+        paintPixel(4, 0, '#ffffff');
+        paintPixel(5, 1, '#8ef3ff');
+        paintPixel(4, 2, '#e9ffff');
+        paintPixel(2, glacierRow, '#ffffff');
+        paintPixel(4, glacierRow + 1, '#62ddff');
+        paintPixel(6, glacierRow, '#ffffff');
+        paintPixel(7, 4 + Math.floor(frame / 12) % 2, '#ffffff');
+    } else if (skinDef.id === 'star-desert') {
+        var desertRow = crouching ? 3 : 5;
+        paintPixel(2, 1, '#d99d39');
+        paintPixel(3, 0, '#ffe27a');
+        paintPixel(4, 1, '#ff7be9');
+        paintPixel(5, 0, '#fff0a6');
+        paintPixel(6, 1, '#d99d39');
+        paintPixel(2, 3, '#6d397f');
+        paintPixel(3, 3, '#ff78e8');
+        paintPixel(4, desertRow, '#39f4dd');
+        paintPixel(5, desertRow + 1, '#ff78e8');
+        paintPixel(6, desertRow, '#ffe57b');
+        paintPixel(7, 6 + Math.floor(frame / 9) % 2, '#fff4bd');
+    } else if (skinDef.id === 'star-master') {
+        var masterRow = crouching ? 3 : 5;
+        paintPixel(2, 1, '#7a50bf');
+        paintPixel(3, 0, '#fff28a');
+        paintPixel(4, 1, '#e5c15b');
+        paintPixel(5, 0, '#ffffff');
+        paintPixel(6, 1, '#7a50bf');
+        paintPixel(4, masterRow, '#fff36e');
+        paintPixel(3, masterRow + 1, '#9b6bdf');
+        paintPixel(5, masterRow + 1, '#9b6bdf');
+        for (var trail = 0; trail < 3; trail++) {
+            context.globalAlpha *= 0.6 - trail * 0.12;
+            paintPixel(-1 - trail * 2, 3 + ((Math.floor(frame / 5) + trail * 2) % 5), '#b998ff');
+        }
     }
     context.restore();
 }
@@ -1436,11 +1579,32 @@ function spawnLevelCoins(event) {
     }
 }
 
+function spawnLevelStar(event) {
+    var record = levelProgress.levels[game.levelData.id];
+    if (!record || !Number.isInteger(event.index) || event.index < 0 || event.index >= 3) {
+        console.error('Evento stella non valido per il livello:', game.levelData.id);
+        return;
+    }
+
+    stars.push({
+        x: W + 8,
+        y: Math.max(4, Math.min(event.y, GROUND_Y - STAR_SPRITE.length)),
+        w: STAR_SPRITE[0].length,
+        h: STAR_SPRITE.length,
+        index: event.index,
+        levelId: game.levelData.id,
+        collected: record.stars[event.index],
+        frame: 0
+    });
+}
+
 function spawnLevelEvent(event) {
     if (event.type === 'obstacle') {
         spawnLevelObstacle(event);
     } else if (event.type === 'coins') {
         spawnLevelCoins(event);
+    } else if (event.type === 'star') {
+        spawnLevelStar(event);
     } else if (event.type === 'wall') {
         spawnWall();
     } else if (event.type === 'pit') {
@@ -1461,6 +1625,45 @@ function updateLevelPits() {
     for (var i = pits.length - 1; i >= 0; i--) {
         pits[i].x -= game.speed;
         if (pits[i].x + pits[i].w < 0) pits.splice(i, 1);
+    }
+}
+
+function collectLevelStar(star) {
+    var record = levelProgress.levels[star.levelId];
+    if (!record) {
+        console.error('Progressi non disponibili per la stella:', star.levelId, star.index);
+        return;
+    }
+    if (record.stars[star.index]) {
+        star.collected = true;
+        return;
+    }
+
+    record.stars[star.index] = true;
+    star.collected = true;
+    persistLevelProgress();
+    syncStarSkinUnlocks();
+    music.playSfx('star');
+    spawnParticles(star.x + star.w / 2, star.y + star.h / 2, [255, 215, 70], 20);
+    spawnParticles(star.x + star.w / 2, star.y + star.h / 2, [255, 249, 183], 8);
+}
+
+function updateLevelStars() {
+    for (var i = stars.length - 1; i >= 0; i--) {
+        var star = stars[i];
+        star.x -= game.speed;
+        star.frame++;
+        if (star.x + star.w < 0) {
+            stars.splice(i, 1);
+            continue;
+        }
+        if (star.collected) continue;
+
+        var playerHeight = player.crouching ? 6 : PH;
+        var playerY = player.crouching ? GROUND_Y - 6 : player.y;
+        if (aabb(player.x + 1, playerY, player.w - 2, playerHeight, star.x, star.y, star.w, star.h)) {
+            collectLevelStar(star);
+        }
     }
 }
 
@@ -1640,6 +1843,7 @@ function initializeRun(attractMode, levelData) {
     coins = [];
     walls = [];
     pits = [];
+    stars = [];
     particles = [];
     keys = {};
     clearTouchInputs();
@@ -1832,13 +2036,16 @@ function buildLevelCard(levelId, index) {
     statusElement.textContent = statusText;
 
     var starsGroup = document.createElement('div');
-    starsGroup.setAttribute('aria-label', 'Tre stelle disponibili nello Step 5');
+    var starCount = record.stars.filter(Boolean).length;
+    starsGroup.setAttribute('aria-label', starCount + ' stelle raccolte su 3');
     var stars = document.createElement('div');
     stars.className = 'level-card-stars';
-    stars.textContent = '☆☆☆';
+    stars.textContent = record.stars.map(function(collected) {
+        return collected ? '★' : '☆';
+    }).join('');
     var starsLabel = document.createElement('div');
     starsLabel.className = 'level-card-stars-label';
-    starsLabel.textContent = 'STELLE';
+    starsLabel.textContent = starCount + '/3 STELLE';
     starsGroup.appendChild(stars);
     starsGroup.appendChild(starsLabel);
 
@@ -1958,6 +2165,7 @@ function showShop(fromGameOver) {
 }
 
 function refreshShop() {
+    syncStarSkinUnlocks();
     ui.shopCoins.textContent = 'MONETE: ' + save.coins;
     var chestButton = document.getElementById('buy-chest-btn');
     chestButton.textContent = 'APRI BAULE (' + CHEST_COST + ' monete)';
@@ -1971,14 +2179,16 @@ function refreshShop() {
 
         var item = document.createElement('div');
         item.className = 'skin-item';
+        item.dataset.skin = skin.id;
         if (equipped)    item.className += ' equipped';
         else if (owned)  item.className += ' unlocked';
         else             item.className += ' locked';
         if (skin.rarity === 'secret') item.className += ' secret-skin';
+        if (skin.collectionOnly) item.className += ' star-skin';
 
         var raritySpan = document.createElement('span');
         raritySpan.className = 'skin-rarity rarity-' + skin.rarity;
-        raritySpan.textContent = RARITY_LABELS[skin.rarity];
+        raritySpan.textContent = skin.collectionOnly ? (owned ? 'STELLE · SBLOCCATA' : 'ESCLUSIVA') : RARITY_LABELS[skin.rarity];
         if (skin.rarity === 'secret') raritySpan.setAttribute('aria-label', 'Rarità segreta');
         item.appendChild(raritySpan);
 
@@ -1996,6 +2206,21 @@ function refreshShop() {
         nameSpan.className = 'skin-name';
         nameSpan.textContent = skin.name;
         item.appendChild(nameSpan);
+
+        if (skin.collectionOnly) {
+            var requirement = starSkinRequirement(skin);
+            var requirementProgress = document.createElement('span');
+            requirementProgress.className = 'skin-requirement-progress';
+            requirementProgress.textContent = owned ? 'REQUISITO COMPLETATO' :
+                requirement.current + '/' + requirement.total + ' RACCOLTE';
+            item.appendChild(requirementProgress);
+            if (!owned) {
+                var requirementText = document.createElement('span');
+                requirementText.className = 'skin-requirement';
+                requirementText.textContent = requirement.text;
+                item.appendChild(requirementText);
+            }
+        }
 
         if (owned && !equipped) {
             item.onclick = (function(skinId) {
@@ -2038,7 +2263,7 @@ function openChest() {
     function skinForRarity(rarity) {
         var candidates = [];
         for (var i = 0; i < SKINS.length; i++) {
-            if (SKINS[i].rarity === rarity) candidates.push(SKINS[i]);
+            if (!SKINS[i].collectionOnly && SKINS[i].rarity === rarity) candidates.push(SKINS[i]);
         }
         return candidates[randInt(0, candidates.length - 1)];
     }
@@ -2643,6 +2868,7 @@ function update(dt) {
     updateBiome();
     updatePlayer();
     if (!game.running) return;
+    if (game.levelData) updateLevelStars();
     updateObstacles();
     if (!game.running) return;
     updateCoins();
@@ -2806,6 +3032,32 @@ function drawLevelPits() {
         ctx.fillStyle = dark;
         ctx.fillRect(x, GROUND_Y, Math.min(2, width), H - GROUND_Y);
         ctx.fillRect(x + width - Math.min(2, width), GROUND_Y, Math.min(2, width), H - GROUND_Y);
+    }
+}
+
+function drawLevelStars() {
+    if (!game.levelData) return;
+    for (var i = 0; i < stars.length; i++) {
+        var star = stars[i];
+        var pulse = Math.sin(game.frameCount * 0.1 + star.index) * 0.5 + 0.5;
+        ctx.save();
+        ctx.translate(Math.floor(star.x + star.w / 2), Math.floor(star.y + star.h / 2));
+        ctx.rotate(star.frame * 0.035);
+        ctx.globalAlpha = star.collected ? 0.28 : 0.82 + pulse * 0.18;
+        ctx.shadowColor = '#ffe36b';
+        ctx.shadowBlur = star.collected ? 0 : 2 + pulse * 4;
+        drawSpriteOnCtx(ctx, -4, -4, STAR_SPRITE, {
+            1: '#f5b832',
+            2: '#fff5a8',
+            3: '#a95818'
+        }, 1);
+        ctx.shadowBlur = 0;
+        if (!star.collected && pulse > 0.84) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(-1, -6, 1, 2);
+            ctx.fillRect(5, 1, 2, 1);
+        }
+        ctx.restore();
     }
 }
 
@@ -3066,6 +3318,7 @@ function draw() {
     drawWalls();
     drawObstacles();
     drawCoins();
+    drawLevelStars();
     drawPlayer();
     drawParticles();
     drawEffects();
