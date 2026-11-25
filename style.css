@@ -680,6 +680,72 @@ button:focus-visible {
     transition: width 0.12s linear;
 }
 
+#boss-hud {
+    position: absolute;
+    top: max(68px, calc(env(safe-area-inset-top) + 64px));
+    left: 50%;
+    z-index: 6;
+    width: min(56vw, 300px);
+    padding: 7px 10px 6px;
+    transform: translateX(-50%);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 14px;
+    background: rgba(5, 10, 20, 0.84);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.36), 0 0 16px var(--boss-color, #65e98a);
+    color: #fff;
+    font-size: clamp(0.56rem, 1.8vw, 0.76rem);
+    pointer-events: none;
+}
+
+.boss-hud-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-shadow: 0 1px 3px #000;
+}
+
+#boss-name {
+    overflow: hidden;
+    color: #fff;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#boss-health-track {
+    height: 7px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+}
+
+#boss-health-fill {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--boss-color, #65e98a), #fff2ab);
+    box-shadow: 0 0 10px var(--boss-color, #65e98a);
+    transition: width 0.2s ease-out;
+}
+
+#boss-attack-label {
+    min-height: 11px;
+    margin-top: 3px;
+    color: #ffe797;
+    font-size: clamp(0.5rem, 1.5vw, 0.64rem);
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-align: center;
+    text-shadow: 0 0 8px rgba(255, 197, 74, 0.8);
+}
+
+#ui-overlay.boss-fight-active #timing-prompt {
+    top: max(132px, calc(env(safe-area-inset-top) + 124px));
+}
+
 @keyframes score-pop {
     0% { scale: 0.72; text-shadow: 0 0 2px #fff; }
     65% { scale: 1.2; text-shadow: 0 0 8px #fff, 0 0 22px #ff5c8a; }
@@ -1516,6 +1582,21 @@ body.mobile-portrait #orientation-prompt {
 }
 
 @media (max-height: 480px) {
+    #boss-hud {
+        top: max(66px, calc(env(safe-area-inset-top) + 60px));
+        width: min(62vw, 280px);
+        padding: 5px 8px 4px;
+    }
+
+    #boss-attack-label {
+        min-height: 9px;
+        margin-top: 2px;
+    }
+
+    #ui-overlay.boss-fight-active #timing-prompt {
+        top: max(122px, calc(env(safe-area-inset-top) + 114px));
+    }
+
     #main-panel {
         padding: 18px 26px;
     }

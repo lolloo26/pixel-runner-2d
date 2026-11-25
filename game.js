@@ -403,6 +403,12 @@ var ui = {
     levelProgressFill: document.getElementById('level-progress-fill'),
     levelProgressValue: document.getElementById('level-progress-value'),
     levelProgressBiome: document.querySelector('#level-progress .level-progress-heading span:first-child'),
+    bossHud: document.getElementById('boss-hud'),
+    bossName: document.getElementById('boss-name'),
+    bossHealthTrack: document.getElementById('boss-health-track'),
+    bossHealthFill: document.getElementById('boss-health-fill'),
+    bossHealthValue: document.getElementById('boss-health-value'),
+    bossAttackLabel: document.getElementById('boss-attack-label'),
     over:         document.getElementById('game-over'),
     pause:        document.getElementById('pause-menu'),
     musicToggle:  document.getElementById('music-toggle'),
@@ -589,6 +595,8 @@ var game = {
     levelElapsed: 0,
     levelEventIndex: 0,
     levelAccumulator: 0,
+    bossPending: false,
+    boss: null,
     score: 0,
     sessionCoins: 0,
     speed: 1.2,
@@ -900,6 +908,20 @@ var music = (function() {
                 playTone(revealBase, revealBase * 1.25, now, 0.3, 'sine', 0.1);
                 playTone(revealBase * 1.5, revealBase * 2, now + 0.08, 0.4, 'sine', 0.085);
             }
+        } else if (type === 'bossEnter') {
+            playTone(90, 48, now, 0.42, 'sine', 0.17);
+            playTone(220, 520, now + 0.08, 0.44, 'triangle', 0.1);
+            playNoise(now + 0.06, 0.22, 0.045, 'lowpass', 750);
+        } else if (type === 'bossHit') {
+            playTone(125, 58, now, 0.2, 'sine', 0.18);
+            playTone(420, 1080, now, 0.16, 'triangle', 0.1);
+            playNoise(now + 0.015, 0.095, 0.065, 'highpass', 2600);
+        } else if (type === 'bossDefeat') {
+            playTone(82, 42, now, 0.75, 'sine', 0.2);
+            playTone(392, 784, now, 0.55, 'triangle', 0.13);
+            playTone(587, 1174, now + 0.09, 0.75, 'sine', 0.12);
+            playTone(784, 1568, now + 0.18, 0.95, 'sine', 0.1);
+            playNoise(now + 0.04, 0.28, 0.09, 'highpass', 1900);
         } else if (type === 'ui') {
             playTone(520, 360, now, 0.055, 'sine', 0.075);
         }
@@ -1240,6 +1262,7 @@ var coins = [];
 var walls = [];
 var pits = [];
 var platforms = [];
+var bossAttacks = [];
 var stars = [];
 var particles = [];
 var atmParticles = [];
@@ -1818,12 +1841,258 @@ function playerOverPit() {
 }
 
 function updateLevelProgress() {
-    var progress = Math.min(1, game.levelElapsed / (game.levelData.durationSeconds * 1000));
+    var duration = game.levelData.durationSeconds * 1000;
+    var progress = game.boss ?
+        (game.boss.defeated ? 1 : 0.95 + (1 - game.boss.hp / game.boss.maxHp) * 0.05) :
+        Math.min(0.95, game.levelElapsed / duration);
     var percent = Math.floor(progress * 100);
     ui.levelProgressFill.style.width = (progress * 100) + '%';
     ui.levelProgressValue.textContent = percent + '%';
     ui.levelProgress.setAttribute('aria-label', 'Progresso livello ' + game.levelData.name);
     ui.levelProgress.setAttribute('aria-valuenow', String(percent));
+}
+
+function getBossPalette(levelId) {
+    var palettes = {
+        jungle: {
+            body: [83, 145, 62],
+            dark: [38, 78, 44],
+            highlight: [177, 225, 96],
+            attack: [95, 220, 92]
+        },
+        volcano: {
+            body: [193, 57, 27],
+            dark: [91, 28, 27],
+            highlight: [255, 183, 54],
+            attack: [255, 102, 35]
+        },
+        glacier: {
+            body: [113, 190, 219],
+            dark: [45, 99, 145],
+            highlight: [225, 251, 255],
+            attack: [123, 224, 255]
+        },
+        desert: {
+            body: [194, 143, 45],
+            dark: [91, 59, 34],
+            highlight: [255, 231, 125],
+            attack: [86, 245, 237]
+        }
+    };
+    return palettes[levelId];
+}
+
+function bossFightCanStart() {
+    return game.bossPending &&
+        game.levelEventIndex >= game.levelData.events.length &&
+        obstacles.length === 0 &&
+        walls.length === 0 &&
+        pits.length === 0 &&
+        platforms.length === 0 &&
+        !game.lavaHazard &&
+        !game.sandStormActive &&
+        game.biomeTransitionTimer <= 0;
+}
+
+function beginBossFight() {
+    var config = game.levelData.boss;
+    var palette = getBossPalette(game.levelData.id);
+    game.boss = {
+        id: game.levelData.id,
+        config: config,
+        palette: palette,
+        hp: config.hp,
+        maxHp: config.hp,
+        x: W + 58,
+        targetX: W - 62,
+        entering: true,
+        flashTimer: 0,
+        targetActive: false,
+        targetWindowStart: 0,
+        targetWindowDuration: Math.max(58, Math.min(84, config.attackInterval - 8)),
+        targetApproachScale: 1,
+        beatCooldown: 52,
+        attackWarning: 0,
+        attackLane: 'jump',
+        attackNumber: 0,
+        defeated: false,
+        defeatTimer: 0
+    };
+    bossAttacks = [];
+    ui.bossName.textContent = config.name;
+    ui.bossHealthValue.textContent = config.hp + ' / ' + config.hp;
+    ui.bossHealthTrack.setAttribute('aria-valuemax', String(config.hp));
+    ui.bossHealthTrack.setAttribute('aria-valuenow', String(config.hp));
+    ui.bossHealthFill.style.width = '100%';
+    ui.bossAttackLabel.textContent = 'PREPARATI';
+    ui.bossHud.style.setProperty('--boss-color', config.color);
+    ui.bossHud.classList.remove('hidden');
+    ui.overlay.classList.add('boss-fight-active');
+    ui.prompt.textContent = config.name;
+    ui.prompt.classList.remove('hit-good');
+    ui.prompt.classList.remove('hidden');
+    hitFeedbackTimer = 54;
+    music.playSfx('bossEnter');
+    updateLevelProgress();
+}
+
+function updateBossHealth() {
+    var boss = game.boss;
+    if (!boss) return;
+    var healthRatio = Math.max(0, boss.hp / boss.maxHp);
+    ui.bossHealthFill.style.width = (healthRatio * 100) + '%';
+    ui.bossHealthValue.textContent = boss.hp + ' / ' + boss.maxHp;
+    ui.bossHealthTrack.setAttribute('aria-valuenow', String(boss.hp));
+}
+
+function selectBossAttackLane(boss) {
+    var patterns = {
+        jungle: ['jump', 'slide'],
+        volcano: ['jump', 'slide'],
+        glacier: ['slide', 'jump'],
+        desert: ['jump', 'slide', 'slide', 'jump']
+    };
+    var pattern = patterns[boss.id];
+    return pattern[boss.attackNumber % pattern.length];
+}
+
+function spawnBossAttack(boss, extra) {
+    var lane = boss.attackLane;
+    var y = lane === 'jump' ? GROUND_Y - 10 : GROUND_Y - PH - 4;
+    bossAttacks.push({
+        x: boss.x - 7,
+        y: y,
+        w: 12,
+        h: 8,
+        speed: boss.config.projectileSpeed + game.speed * 0.22 + (extra ? 0.8 : 0),
+        lane: lane,
+        color: boss.palette.attack,
+        highlight: boss.palette.highlight,
+        extra: extra,
+        phase: game.frameCount
+    });
+}
+
+function openBossTarget(boss) {
+    boss.targetActive = true;
+    boss.targetWindowStart = 0;
+    boss.attackNumber++;
+    boss.attackLane = selectBossAttackLane(boss);
+    boss.attackWarning = 22;
+    ui.prompt.textContent = boss.attackLane === 'jump' ? 'COLPISCI · SALTA' : 'COLPISCI · SCIVOLA';
+    ui.prompt.classList.remove('hit-good');
+    ui.prompt.classList.remove('hidden');
+    ui.target.textContent = 'HIT';
+    ui.target.classList.remove('hidden');
+    ui.bossAttackLabel.textContent = boss.attackLane === 'jump' ? 'ATTACCO: SALTA' : 'ATTACCO: SCIVOLA';
+    positionWallTarget(boss);
+}
+
+function activeBossTarget() {
+    return game.boss && !game.boss.defeated && game.boss.targetActive ? game.boss : null;
+}
+
+function attemptBossHit() {
+    var boss = activeBossTarget();
+    if (!boss) return false;
+    boss.targetActive = false;
+    boss.flashTimer = 12;
+    ui.target.classList.add('hidden');
+    boss.hp = Math.max(0, boss.hp - 1);
+    game.score += 30;
+    game.sessionCoins += 2;
+    game.flashAlpha = 0.36;
+    game.screenShake = 4;
+    spawnParticles(boss.x + 24, GROUND_Y - 32, boss.palette.highlight, 28);
+    spawnParticles(boss.x + 16, GROUND_Y - 24, boss.palette.body, 16);
+    music.playSfx('bossHit');
+    updateBossHealth();
+    updateLevelProgress();
+
+    if (boss.hp === 0) {
+        boss.defeated = true;
+        boss.defeatTimer = 54;
+        boss.attackWarning = 0;
+        bossAttacks = [];
+        ui.bossAttackLabel.textContent = 'SCONFITTO';
+        ui.prompt.textContent = 'BOSS SCONFITTO!';
+        ui.prompt.classList.add('hit-good');
+        hitFeedbackTimer = 54;
+        spawnParticles(boss.x + 25, GROUND_Y - 32, boss.palette.highlight, 74);
+        game.screenShake = 8;
+        game.flashAlpha = 0.55;
+        music.playSfx('bossDefeat');
+        updateLevelProgress();
+    } else {
+        ui.prompt.textContent = 'COLPO!';
+        ui.prompt.classList.add('hit-good');
+        hitFeedbackTimer = 38;
+    }
+    return true;
+}
+
+function updateBossAttacks() {
+    for (var i = bossAttacks.length - 1; i >= 0; i--) {
+        var attack = bossAttacks[i];
+        attack.x -= attack.speed;
+        if (attack.x + attack.w < 0) {
+            bossAttacks.splice(i, 1);
+            continue;
+        }
+        var playerBounds = playerCollisionBounds();
+        if (aabb(player.x + 2, playerBounds.y, player.w - 4, playerBounds.h, attack.x, attack.y, attack.w, attack.h)) {
+            game.screenShake = 11;
+            gameOver();
+            return;
+        }
+    }
+}
+
+function updateBoss() {
+    var boss = game.boss;
+    if (!boss) return;
+    if (boss.flashTimer > 0) boss.flashTimer--;
+
+    if (boss.defeated) {
+        boss.defeatTimer--;
+        if (boss.defeatTimer <= 0) gameOver(true);
+        return;
+    }
+
+    if (boss.entering) {
+        boss.x = Math.max(boss.targetX, boss.x - 4);
+        if (boss.x <= boss.targetX) {
+            boss.entering = false;
+            boss.beatCooldown = 28;
+        }
+    } else if (boss.targetActive) {
+        boss.targetWindowStart++;
+        var progress = Math.min(1, boss.targetWindowStart / boss.targetWindowDuration);
+        var maxApproachScale = boss.targetApproachScale || (1 + 38 / targetHitRadius);
+        var approachScale = 1 + (maxApproachScale - 1) * (1 - progress);
+        ui.target.style.setProperty('--approach-scale', approachScale.toFixed(3));
+        if (boss.targetWindowStart >= boss.targetWindowDuration) {
+            boss.targetActive = false;
+            ui.target.classList.add('hidden');
+            ui.prompt.textContent = 'BERSAGLIO MANCATO';
+            ui.prompt.classList.remove('hit-good');
+            hitFeedbackTimer = 38;
+            spawnBossAttack(boss, true);
+            boss.beatCooldown = Math.min(boss.beatCooldown, 24);
+        }
+    } else {
+        boss.beatCooldown--;
+        if (boss.beatCooldown <= 0) {
+            boss.beatCooldown = boss.config.attackInterval;
+            openBossTarget(boss);
+        }
+    }
+
+    if (boss.attackWarning > 0) {
+        boss.attackWarning--;
+        if (boss.attackWarning === 0) spawnBossAttack(boss, false);
+    }
+    updateBossAttacks();
 }
 
 function obstaclesOverlapAt(nx, ny, nw, nh) {
@@ -1961,6 +2230,8 @@ function initializeRun(attractMode, levelData) {
     game.levelElapsed = 0;
     game.levelEventIndex = 0;
     game.levelAccumulator = 0;
+    game.bossPending = false;
+    game.boss = null;
     game.score = 0;
     game.sessionCoins = 0;
     game.speed = levelData ? levelData.speed : 1.2;
@@ -1989,6 +2260,7 @@ function initializeRun(attractMode, levelData) {
     walls = [];
     pits = [];
     platforms = [];
+    bossAttacks = [];
     stars = [];
     particles = [];
     sandParticles = [];
@@ -2011,6 +2283,13 @@ function initializeRun(attractMode, levelData) {
     ui.levelProgressValue.textContent = '0%';
     ui.levelProgress.setAttribute('aria-valuenow', '0');
     ui.levelProgressBiome.textContent = levelData ? levelData.name : 'GIUNGLA';
+    ui.bossHud.classList.add('hidden');
+    ui.bossName.textContent = '';
+    ui.bossHealthValue.textContent = '';
+    ui.bossHealthFill.style.width = '100%';
+    ui.bossHealthTrack.setAttribute('aria-valuenow', '0');
+    ui.bossAttackLabel.textContent = '';
+    ui.overlay.classList.remove('boss-fight-active');
     ui.duck.classList.toggle('active', !attractMode && isMobileTouch());
     ui.prompt.classList.add('hidden');
     ui.prompt.classList.remove('hit-good');
@@ -2041,7 +2320,8 @@ function startGame() {
 function startLevel(levelId) {
     var levelIndex = LEVEL_IDS.indexOf(levelId);
     var levelData = window.PIXEL_RUNNER_LEVELS && window.PIXEL_RUNNER_LEVELS[levelId];
-    if (!levelData || !Array.isArray(levelData.events)) {
+    if (!levelData || !Array.isArray(levelData.events) || !levelData.boss ||
+        !Number.isInteger(levelData.boss.hp) || levelData.boss.hp < 1) {
         console.error('Dati del livello non disponibili o non validi:', levelId);
         return;
     }
@@ -2124,6 +2404,9 @@ function gameOver(levelComplete) {
     ui.prompt.classList.add('hidden');
     ui.prompt.classList.remove('hit-good');
     ui.target.classList.add('hidden');
+    ui.bossHud.classList.add('hidden');
+    ui.bossAttackLabel.textContent = '';
+    ui.overlay.classList.remove('boss-fight-active');
     ui.biomeTransition.classList.add('hidden');
     ui.biomeParticles.innerHTML = '';
     ui.overlay.classList.remove('theme-jungle', 'theme-volcano', 'theme-glacier', 'theme-neon');
@@ -2845,7 +3128,7 @@ function positionWallTarget(wall) {
     var targetRadius = targetWidth / 2;
     var desiredScale = 1 + 38 / targetHitRadius;
     var safeRadius = targetRadius * desiredScale + 8;
-    var exclusions = [ui.score, ui.levelProgress, ui.coinCount, ui.biome, ui.prompt, ui.mobileSettingsButton, ui.duck];
+    var exclusions = [ui.score, ui.levelProgress, ui.bossHud, ui.coinCount, ui.biome, ui.prompt, ui.mobileSettingsButton, ui.duck];
     var positions = [];
     var step = Math.max(8, Math.min(20, Math.floor(targetRadius / 2)));
 
@@ -3069,12 +3352,23 @@ function update(dt) {
     game.frameCount++;
     game.score += game.speed * 0.05;
     if (game.levelData) {
-        game.levelElapsed += dt;
+        if (!game.boss) {
+            game.levelElapsed = Math.min(
+                game.levelElapsed + dt,
+                game.levelData.durationSeconds * 1000 * 0.95
+            );
+        }
         game.levelDistance += game.speed;
-        updateLevelEvents();
-        updateLevelPits();
-        updateLevelPlatforms();
-        updateSandStorm();
+        if (!game.boss) {
+            updateLevelEvents();
+            updateLevelPits();
+            updateLevelPlatforms();
+            updateSandStorm();
+            if (game.levelElapsed >= game.levelData.durationSeconds * 1000 * 0.9) {
+                game.bossPending = true;
+            }
+            if (bossFightCanStart()) beginBossFight();
+        }
         updateLevelProgress();
     } else {
         var targetSpeed = game.baseSpeed + (5.2 - game.baseSpeed) * (1 - Math.exp(-game.score / 1100));
@@ -3089,21 +3383,18 @@ function update(dt) {
     if (!game.running) return;
     updateCoins();
     updateWalls();
+    if (game.levelData && game.boss) updateBoss();
+    if (!game.running) return;
     updateBiomeTransition(dt);
     if (!game.running) return;
     updateParticles();
     updateAtmParticles();
-    if (game.levelData && game.levelElapsed >= game.levelData.durationSeconds * 1000) {
-        updateLevelProgress();
-        gameOver(true);
-        return;
-    }
 
     if (game.screenShake > 0) game.screenShake -= 0.5;
     if (game.flashAlpha > 0)  game.flashAlpha  -= 0.03;
     if (hitFeedbackTimer > 0) {
         hitFeedbackTimer--;
-        if (hitFeedbackTimer === 0 && !activeTimingWall()) {
+        if (hitFeedbackTimer === 0 && !activeTimingWall() && !activeBossTarget()) {
             ui.prompt.classList.add('hidden');
             ui.prompt.classList.remove('hit-good');
         }
@@ -3622,6 +3913,149 @@ function drawWalls() {
     }
 }
 
+function drawBoss() {
+    var boss = game.boss;
+    if (!boss) return;
+    var bob = Math.floor(Math.sin(game.frameCount * 0.09) * 1.5);
+    ctx.save();
+    ctx.translate(Math.floor(boss.x), GROUND_Y + bob);
+    if (boss.defeated) {
+        ctx.globalAlpha = Math.max(0, boss.defeatTimer / 54);
+        ctx.translate(28, -32);
+        ctx.rotate((54 - boss.defeatTimer) * 0.025);
+        ctx.translate(-28, 32);
+    }
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(4, -2, 52, 3);
+
+    if (boss.id === 'jungle') {
+        ctx.fillStyle = '#294d31';
+        ctx.fillRect(4, -43, 11, 30);
+        ctx.fillRect(45, -43, 11, 30);
+        ctx.fillStyle = '#397a3e';
+        ctx.fillRect(1, -28, 11, 5);
+        ctx.fillRect(48, -36, 10, 5);
+        ctx.fillStyle = '#654a32';
+        ctx.fillRect(14, -46, 31, 39);
+        ctx.fillRect(17, -55, 27, 18);
+        ctx.fillStyle = '#477f3e';
+        ctx.fillRect(10, -60, 13, 9);
+        ctx.fillRect(20, -64, 17, 10);
+        ctx.fillRect(34, -60, 15, 9);
+        ctx.fillStyle = '#8fbd50';
+        ctx.fillRect(15, -60, 7, 3);
+        ctx.fillRect(26, -64, 7, 3);
+        ctx.fillRect(39, -60, 7, 3);
+        ctx.fillStyle = '#202d20';
+        ctx.fillRect(15, -45, 28, 5);
+        ctx.fillStyle = '#d9ef8a';
+        ctx.fillRect(21, -48, 4, 3);
+        ctx.fillRect(34, -48, 4, 3);
+        ctx.fillStyle = '#3a572e';
+        ctx.fillRect(17, -8, 10, 7);
+        ctx.fillRect(33, -8, 10, 7);
+        ctx.fillRect(21, -36, 2, 17);
+        ctx.fillRect(37, -33, 2, 14);
+    } else if (boss.id === 'volcano') {
+        ctx.fillStyle = '#5c2522';
+        ctx.fillRect(1, -46, 15, 18);
+        ctx.fillRect(43, -46, 15, 18);
+        ctx.fillStyle = '#b94325';
+        ctx.fillRect(9, -42, 42, 34);
+        ctx.fillRect(15, -55, 33, 21);
+        ctx.fillStyle = '#ff7138';
+        ctx.fillRect(18, -57, 8, 9);
+        ctx.fillRect(28, -61, 8, 13);
+        ctx.fillRect(39, -57, 7, 9);
+        ctx.fillRect(3, -50, 8, 12);
+        ctx.fillRect(48, -50, 8, 12);
+        ctx.fillStyle = '#ffbd45';
+        ctx.fillRect(20, -50, 5, 3);
+        ctx.fillRect(38, -50, 5, 3);
+        ctx.fillRect(24, -33, 3, 10);
+        ctx.fillRect(35, -29, 3, 9);
+        ctx.fillStyle = '#522420';
+        ctx.fillRect(15, -8, 12, 7);
+        ctx.fillRect(34, -8, 12, 7);
+        ctx.fillStyle = '#ffe078';
+        ctx.fillRect(24, -39, 3, 3);
+        ctx.fillRect(37, -39, 3, 3);
+    } else if (boss.id === 'glacier') {
+        ctx.fillStyle = '#477f9f';
+        ctx.fillRect(4, -43, 12, 29);
+        ctx.fillRect(44, -43, 12, 29);
+        ctx.fillStyle = '#b4e6f4';
+        ctx.fillRect(10, -48, 39, 40);
+        ctx.fillRect(15, -59, 31, 20);
+        ctx.fillRect(7, -56, 9, 10);
+        ctx.fillRect(44, -56, 9, 10);
+        ctx.fillStyle = '#e8fbff';
+        ctx.fillRect(18, -63, 8, 7);
+        ctx.fillRect(29, -66, 7, 10);
+        ctx.fillRect(39, -62, 7, 6);
+        ctx.fillRect(16, -8, 14, 7);
+        ctx.fillRect(33, -8, 14, 7);
+        ctx.fillStyle = '#315575';
+        ctx.fillRect(20, -51, 4, 3);
+        ctx.fillRect(38, -51, 4, 3);
+        ctx.fillRect(26, -43, 11, 5);
+        ctx.fillStyle = '#f6ffff';
+        ctx.fillRect(17, -35, 29, 4);
+    } else {
+        ctx.fillStyle = '#58432d';
+        ctx.fillRect(8, -31, 45, 22);
+        ctx.fillRect(4, -26, 13, 16);
+        ctx.fillRect(43, -26, 12, 16);
+        ctx.fillRect(14, -8, 10, 7);
+        ctx.fillRect(39, -8, 11, 7);
+        ctx.fillStyle = '#c99b42';
+        ctx.fillRect(31, -57, 21, 28);
+        ctx.fillRect(28, -52, 7, 19);
+        ctx.fillRect(34, -64, 17, 11);
+        ctx.fillRect(30, -61, 5, 14);
+        ctx.fillStyle = '#35d9df';
+        ctx.fillRect(37, -49, 4, 3);
+        ctx.fillRect(46, -49, 4, 3);
+        ctx.fillRect(20, -26, 5, 5);
+        ctx.fillRect(35, -26, 5, 5);
+        ctx.fillStyle = '#ffe487';
+        ctx.fillRect(12, -38, 6, 3);
+        ctx.fillRect(17, -41, 5, 3);
+        ctx.fillRect(44, -38, 6, 3);
+    }
+
+    if (boss.flashTimer > 0) {
+        ctx.fillStyle = 'rgba(255,255,255,' + (boss.flashTimer / 18) + ')';
+        ctx.fillRect(18, -52, 7, 5);
+        ctx.fillRect(37, -52, 7, 5);
+        ctx.fillRect(23, -29, 15, 3);
+    }
+    ctx.restore();
+}
+
+function drawBossAttacks() {
+    for (var i = 0; i < bossAttacks.length; i++) {
+        var attack = bossAttacks[i];
+        var pulse = Math.sin(game.frameCount * 0.45 + attack.phase) * 0.25 + 0.75;
+        ctx.fillStyle = rgba(attack.color, pulse * 0.3);
+        ctx.fillRect(Math.floor(attack.x - 7), Math.floor(attack.y + 2), 8, 4);
+        ctx.fillStyle = rgb(attack.color);
+        if (game.levelData.id === 'glacier') {
+            ctx.beginPath();
+            ctx.moveTo(Math.floor(attack.x), Math.floor(attack.y + attack.h));
+            ctx.lineTo(Math.floor(attack.x + attack.w / 2), Math.floor(attack.y));
+            ctx.lineTo(Math.floor(attack.x + attack.w), Math.floor(attack.y + attack.h));
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            ctx.fillRect(Math.floor(attack.x), Math.floor(attack.y), attack.w, attack.h);
+        }
+        ctx.fillStyle = rgb(attack.highlight);
+        ctx.fillRect(Math.floor(attack.x + 3), Math.floor(attack.y + 2), 3, 2);
+    }
+}
+
 function drawParticles() {
     for (var i = 0; i < particles.length; i++) {
         var p = particles[i];
@@ -3658,6 +4092,8 @@ function draw() {
     drawMeteoriteWarnings();
     drawCoins();
     drawLevelStars();
+    drawBoss();
+    drawBossAttacks();
     drawPlayer();
     drawParticles();
     drawEffects();
@@ -3851,7 +4287,11 @@ document.getElementById('mobile-settings-close-btn').onclick = closeMobileSettin
 ui.target.addEventListener('click', function(e) {
     e.preventDefault();
     e.stopPropagation();
-    attemptWallHit(activeTimingWall());
+    if (activeBossTarget()) {
+        attemptBossHit();
+    } else {
+        attemptWallHit(activeTimingWall());
+    }
 });
 
 document.getElementById('start-btn').onclick = function() {

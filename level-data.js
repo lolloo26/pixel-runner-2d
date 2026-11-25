@@ -8,6 +8,13 @@ window.PIXEL_RUNNER_LEVELS = {
         speed: 2.4,
         firstCompletionReward: 500,
         replayReward: 100,
+        boss: {
+            name: 'GUARDIANO DELLA GIUNGLA',
+            hp: 4,
+            attackInterval: 92,
+            projectileSpeed: 3.1,
+            color: '#4fd16c'
+        },
         events: [
             { at: 360, type: 'coins', count: 5, y: 112 },
             { at: 760, type: 'star', index: 0, y: 96 },
@@ -39,6 +46,13 @@ window.PIXEL_RUNNER_LEVELS = {
         speed: 2.7,
         firstCompletionReward: 500,
         replayReward: 100,
+        boss: {
+            name: 'TITANO DI MAGMA',
+            hp: 6,
+            attackInterval: 80,
+            projectileSpeed: 3.4,
+            color: '#ff7138'
+        },
         events: [
             { at: 380, type: 'coins', count: 5, y: 112 },
             { at: 820, type: 'star', index: 0, y: 96 },
@@ -96,6 +110,13 @@ window.PIXEL_RUNNER_LEVELS = {
         speed: 3,
         firstCompletionReward: 500,
         replayReward: 100,
+        boss: {
+            name: 'COLOSSO DI GHIACCIO',
+            hp: 8,
+            attackInterval: 70,
+            projectileSpeed: 3.6,
+            color: '#8de8ff'
+        },
         events: [
             { at: 420, type: 'coins', count: 5, y: 110 },
             { at: 920, type: 'star', index: 0, y: 94 },
@@ -131,6 +152,13 @@ window.PIXEL_RUNNER_LEVELS = {
         speed: 3.3,
         firstCompletionReward: 500,
         replayReward: 100,
+        boss: {
+            name: 'SFINGE NEON',
+            hp: 10,
+            attackInterval: 62,
+            projectileSpeed: 4,
+            color: '#edcf60'
+        },
         events: [
             { at: 460, type: 'coins', count: 5, y: 112 },
             { at: 1000, type: 'star', index: 0, y: 96 },
